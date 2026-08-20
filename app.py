@@ -22,6 +22,19 @@ def clean_val(val):
         return ""
     return re.sub(r'[^a-zA-Z0-9]', '', str(val)).lower().strip()
 
+# Helper Function: Rank-Based Feedback / Status Comments
+def get_rank_comment(rank):
+    if rank == 1:
+        return "🥇 Outstanding Performance! Class Rank #1. Keep it up! 🌟"
+    elif rank <= 3:
+        return "🥈 Excellent Performance! Top 3 in Class. Keep pushing! 💪"
+    elif rank <= 10:
+        return "🌟 Very Good Effort! Top 10 Performer. Work hard for Top 3!"
+    elif rank <= 20:
+        return "👍 Good Effort! Consistent practice will boost your rank."
+    else:
+        return "💪 Scope for Improvement! Focus on weaker subjects."
+
 # Background Image CSS Injection
 BG_PATH = "photos/system/background.png"
 if os.path.exists(BG_PATH):
@@ -72,11 +85,15 @@ def log_parent_search(roll_no, student_name, selected_class):
 
 # Excel Data Processor
 def process_data(df):
-    meta_cols = ['Class', 'Roll_No', 'Student_Name', 'Father_Name', 'DOB', 'Aadhaar_No', 'Exam_Type', 'Class_Teacher']
+    meta_cols = ['Class', 'Roll_No', 'Student_Name', 'Father_Name', 'DOB', 'Aadhaar_No', 'Exam_Type', 'Max_Marks', 'Class_Teacher']
+    
+    # If Max_Marks column is missing in Excel, set default based on exam type
+    if 'Max_Marks' not in df.columns:
+        df['Max_Marks'] = df['Exam_Type'].apply(lambda x: 150 if 'PWT' in str(x).upper() else 600)
+    
     subject_cols = [col for col in df.columns if col not in meta_cols]
     
     df['Total_Marks'] = df[subject_cols].sum(axis=1)
-    df['Max_Marks'] = df['Exam_Type'].apply(lambda x: 150 if 'PWT' in str(x).upper() else 600)
     df['Percentage'] = (df['Total_Marks'] / df['Max_Marks']) * 100
     df['Class_Rank'] = df.groupby(['Class', 'Exam_Type'])['Total_Marks'].rank(ascending=False, method='min').astype(int)
     return df
@@ -154,21 +171,37 @@ if menu == "⚙️ Admin Portal":
         col_sys1, col_sys2 = st.columns(2)
         with col_sys1:
             up_logo = st.file_uploader("Upload School Logo (Top-Right)", type=["png", "jpg", "jpeg"], key="up_logo")
-            if st.button("Save School Logo"):
-                if up_logo:
-                    img = Image.open(up_logo)
-                    img.save(LOGO_PATH)
-                    st.success("✅ School Logo Saved!")
-                    st.rerun()
-        
+            btn_c1, btn_c2 = st.columns(2)
+            with btn_c1:
+                if st.button("Save School Logo"):
+                    if up_logo:
+                        img = Image.open(up_logo)
+                        img.save(LOGO_PATH)
+                        st.success("✅ School Logo Saved!")
+                        st.rerun()
+            with btn_c2:
+                if st.button("❌ Remove Logo"):
+                    if os.path.exists(LOGO_PATH):
+                        os.remove(LOGO_PATH)
+                        st.success("✅ Logo Removed!")
+                        st.rerun()
+
         with col_sys2:
             up_bg = st.file_uploader("Upload Site Background Image", type=["png", "jpg", "jpeg"], key="up_bg")
-            if st.button("Save Background Image"):
-                if up_bg:
-                    img = Image.open(up_bg)
-                    img.save(BG_PATH)
-                    st.success("✅ Background Image Applied!")
-                    st.rerun()
+            bg_c1, bg_c2 = st.columns(2)
+            with bg_c1:
+                if st.button("Save Background Image"):
+                    if up_bg:
+                        img = Image.open(up_bg)
+                        img.save(BG_PATH)
+                        st.success("✅ Background Image Applied!")
+                        st.rerun()
+            with bg_c2:
+                if st.button("❌ Remove Background"):
+                    if os.path.exists(BG_PATH):
+                        os.remove(BG_PATH)
+                        st.success("✅ Background Removed!")
+                        st.rerun()
 
         st.markdown("---")
         
@@ -277,7 +310,7 @@ elif menu == "👨‍🎓 Parent Portal":
         student_summary = df_data.groupby(['Class', 'Student_Name', 'Roll_No']).agg(Overall_Percentage=('Percentage', 'mean')).reset_index()
         school_topper = student_summary.sort_values(by='Overall_Percentage', ascending=False).iloc[0]
         
-        news_text = f"🏆 <b>SCHOOL TOPPER:</b> {school_topper['Student_Name']} (Class {school_topper['Class']}) - {school_topper['Overall_Percentage']:.2f}% | "
+        news_text = f"🏆 <b>OVERALL SCHOOL TOPPER:</b> {school_topper['Student_Name']} (Class {school_topper['Class']}) - {school_topper['Overall_Percentage']:.2f}% | "
         st.markdown(
             f"""
             <div style="background-color: #ffeb3b; padding: 8px; border-radius: 5px; color: #000; font-size: 16px;">
@@ -288,27 +321,33 @@ elif menu == "👨‍🎓 Parent Portal":
         )
         st.write("")
 
-    # Toppers Results With Photo
+    # TOP 3 CLASS-WISE TOPPERS HALL OF FAME
     if st.session_state["student_data"] is not None:
-        with st.expander("🏆 **SCHOOL TOPPERS & CLASS TOPPERS (HALL OF FAME)**", expanded=False):
+        with st.expander("🏆 **HALL OF FAME - TOP 3 STUDENTS CLASS-WISE**", expanded=False):
             df_data = st.session_state["student_data"]
             student_summary = df_data.groupby(['Class', 'Student_Name', 'Roll_No']).agg(Overall_Percentage=('Percentage', 'mean')).reset_index()
-            school_topper = student_summary.sort_values(by='Overall_Percentage', ascending=False).iloc[0]
             
-            st.markdown("#### 🥇 Overall School Topper")
-            t_col1, t_col2 = st.columns([1, 4])
-            with t_col1:
-                top_photo_path = f"photos/students/{school_topper['Roll_No']}.png"
-                if os.path.exists(top_photo_path):
-                    st.image(top_photo_path, width=120)
-                else:
-                    st.info("📷 No Photo")
-            with t_col2:
-                st.write(f"🌟 **Name:** {school_topper['Student_Name']}")
-                st.write(f"📌 **Class:** {school_topper['Class']} | **Roll No:** {school_topper['Roll_No']}")
-                st.write(f"🎯 **Overall Percentage:** {school_topper['Overall_Percentage']:.2f}%")
+            classes = sorted(student_summary['Class'].unique())
+            for cls in classes:
+                st.markdown(f"#### 🏫 **Class {cls} - Top 3 Performers**")
+                cls_toppers = student_summary[student_summary['Class'] == cls].sort_values(by='Overall_Percentage', ascending=False).head(3)
+                
+                t_cols = st.columns(3)
+                badges = ["🥇 1st Rank", "🥈 2nd Rank", "🥉 3rd Rank"]
+                
+                for idx, (_, topper) in enumerate(cls_toppers.iterrows()):
+                    with t_cols[idx]:
+                        top_photo = f"photos/students/{topper['Roll_No']}.png"
+                        if os.path.exists(top_photo):
+                            st.image(top_photo, width=110)
+                        else:
+                            st.info("📷 No Photo")
+                        st.markdown(f"**{badges[idx]}**")
+                        st.write(f"👤 **Name:** {topper['Student_Name']}")
+                        st.write(f"📌 **Roll No:** {topper['Roll_No']}")
+                        st.write(f"🎯 **Score:** {topper['Overall_Percentage']:.2f}%")
+                st.markdown("---")
 
-    st.markdown("---")
     st.header("🔎 Check Student Result")
     
     if st.session_state["student_data"] is None:
@@ -381,23 +420,47 @@ elif menu == "👨‍🎓 Parent Portal":
                 total_max = filtered_df['Max_Marks'].sum()
                 
                 k1, k2, k3 = st.columns(3)
-                k1.metric("Overall Percentage", f"{avg_pct:.2f}%")
+                k1.metric("Overall Average Score", f"{avg_pct:.2f}%")
                 k2.metric("Total Marks Obtained", f"{total_obtained} / {total_max}")
-                k3.metric("Status", "PASS / EXCELLENT" if avg_pct >= 60 else "NEEDS IMPROVEMENT")
+                k3.metric("Overall Status", "PASS / EXCELLENT" if avg_pct >= 60 else "NEEDS IMPROVEMENT")
                 
                 st.markdown("---")
+
+                # CUMULATIVE EXAM PROGRESSION & RANK COMMENTS
+                st.subheader("📊 Cumulative Exam-Wise Performance Trend")
+                cum_summary = []
+                for _, r in filtered_df.iterrows():
+                    cum_summary.append({
+                        "Exam Name": r['Exam_Type'],
+                        "Marks Obtained": f"{r['Total_Marks']} / {r['Max_Marks']}",
+                        "Percentage (%)": f"{r['Percentage']:.2f}%",
+                        "Class Rank": f"#{r['Class_Rank']}",
+                        "Status / Feedback Comment": get_rank_comment(r['Class_Rank'])
+                    })
+                st.dataframe(pd.DataFrame(cum_summary), hide_index=True, use_container_width=True)
+
+                st.markdown("---")
                 
-                st.subheader("📝 Exam-Wise Detailed Scorecard")
-                meta_cols = ['Class', 'Roll_No', 'Student_Name', 'Father_Name', 'DOB', 'Aadhaar_No', 'Exam_Type', 'Class_Teacher', 'Total_Marks', 'Max_Marks', 'Percentage', 'Class_Rank']
+                # DETAILED EXAM SCORECARD WITH 1-BASED SUBJECT INDEXING
+                st.subheader("📝 Exam-Wise Detailed Subject Scorecard")
+                meta_cols = ['Class', 'Roll_No', 'Student_Name', 'Father_Name', 'DOB', 'Aadhaar_No', 'Exam_Type', 'Max_Marks', 'Class_Teacher', 'Total_Marks', 'Percentage', 'Class_Rank']
                 subject_cols = [col for col in df.columns if col not in meta_cols]
                 
                 for index, row in filtered_df.iterrows():
                     with st.expander(f"📌 **{row['Exam_Type']}** | Score: {row['Total_Marks']}/{row['Max_Marks']} ({row['Percentage']:.2f}%) | Rank: #{row['Class_Rank']}", expanded=True):
-                        m_df = pd.DataFrame({
-                            'Subject': subject_cols,
-                            'Marks Obtained': [row[sub] for sub in subject_cols]
-                        })
-                        st.dataframe(m_df.T, use_container_width=True)
+                        st.info(f"💡 **Teacher's Feedback Comment:** {get_rank_comment(row['Class_Rank'])}")
+                        
+                        # Sequential Subject Formatting starting from 1
+                        subject_rows = []
+                        for s_no, sub_name in enumerate(subject_cols, start=1):
+                            subject_rows.append({
+                                'S.No.': s_no,
+                                'Subject Name': sub_name,
+                                'Marks Obtained': row[sub_name]
+                            })
+                        
+                        m_df = pd.DataFrame(subject_rows)
+                        st.dataframe(m_df, hide_index=True, use_container_width=True)
 
 
 # ==============================================================================
@@ -411,7 +474,6 @@ elif menu == "🖼️ School Gallery":
     if len(gallery_files) == 0:
         st.info("Gallery me abhi koi photo upload nahi hui hai. Admin Portal se Upload karein.")
     else:
-        # Build HTML Marquee for Walking Images Right-to-Left
         import base64
         images_html = ""
         for img_name in gallery_files:
