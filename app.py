@@ -16,7 +16,7 @@ os.makedirs("photos/board", exist_ok=True)
 os.makedirs("photos/system", exist_ok=True)
 os.makedirs("backups", exist_ok=True)
 
-# Helper Function: Clean Alphanumeric String for Flexible Matching
+# Helper Function: Clean Alphanumeric String
 def clean_val(val):
     if pd.isna(val) or val is None:
         return ""
@@ -45,7 +45,7 @@ if os.path.exists(BG_PATH):
         f"""
         <style>
         .stApp {{
-            background-image: linear-gradient(rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.88)), url("data:image/png;base64,{encoded_string}");
+            background-image: linear-gradient(rgba(255, 255, 255, 0.90), rgba(255, 255, 255, 0.90)), url("data:image/png;base64,{encoded_string}");
             background-size: cover;
             background-attachment: fixed;
         }}
@@ -87,7 +87,6 @@ def log_parent_search(roll_no, student_name, selected_class):
 def process_data(df):
     meta_cols = ['Class', 'Roll_No', 'Student_Name', 'Father_Name', 'DOB', 'Aadhaar_No', 'Exam_Type', 'Max_Marks', 'Class_Teacher']
     
-    # If Max_Marks column is missing in Excel, set default based on exam type
     if 'Max_Marks' not in df.columns:
         df['Max_Marks'] = df['Exam_Type'].apply(lambda x: 150 if 'PWT' in str(x).upper() else 600)
     
@@ -121,26 +120,274 @@ def load_board_toppers():
             return json.load(f)
     return []
 
-# Header Layout with Top-Right School Logo
-head_col1, head_col2 = st.columns([4, 1])
-with head_col1:
-    st.title("🏫 Jawahar Navodaya Vidyalaya, Chhotaudepur")
-    st.subheader("📊 Student Performance & Result Portal")
-with head_col2:
+# Dynamic Top Header with Compact Space-Saving Menu
+top_head_col1, top_head_col2, top_head_col3 = st.columns([3, 1.2, 0.8])
+
+with top_head_col1:
+    st.markdown("<h2 style='margin:0; padding:0; color:#0D47A1;'>🏫 Jawahar Navodaya Vidyalaya, Chhotaudepur</h2>", unsafe_allow_html=True)
+    st.markdown("<p style='margin:0; font-weight:bold; color:#555;'>📊 Student Performance & Result Portal</p>", unsafe_allow_html=True)
+
+with top_head_col2:
+    # Space-saving Dropdown Navigation Menu
+    menu = st.selectbox(
+        "Navigation",
+        ["👨‍🎓 Parent Portal", "🖼️ School Gallery", "🏆 Board Exam Results", "⚙️ Admin Portal"],
+        label_visibility="collapsed"
+    )
+
+with top_head_col3:
     LOGO_PATH = "photos/system/logo.png"
     if os.path.exists(LOGO_PATH):
-        st.image(LOGO_PATH, width=120)
+        st.image(LOGO_PATH, width=90)
 
-st.markdown("---")
+st.markdown("<hr style='margin: 8px 0;'>", unsafe_allow_html=True)
 
-# Navigation
-menu = st.sidebar.radio("Navigation", ["👨‍🎓 Parent Portal", "🖼️ School Gallery", "🏆 Board Exam Results", "⚙️ Admin Portal"])
+
+# ==============================================================================
+# 👨‍🎓 PARENT PORTAL
+# ==============================================================================
+if menu == "👨‍🎓 Parent Portal":
+    
+    # 1. Continuous Right-to-Left Ticker: School Topper + All Classes Top 3 Toppers
+    if st.session_state["student_data"] is not None:
+        df_data = st.session_state["student_data"]
+        student_summary = df_data.groupby(['Class', 'Student_Name', 'Roll_No']).agg(Overall_Percentage=('Percentage', 'mean')).reset_index()
+        
+        # Overall School Topper
+        school_topper = student_summary.sort_values(by='Overall_Percentage', ascending=False).iloc[0]
+        ticker_items = [f"🏆 <b>OVERALL SCHOOL TOPPER:</b> {school_topper['Student_Name']} (Class {school_topper['Class']}) - {school_topper['Overall_Percentage']:.2f}%"]
+        
+        # Top 3 Toppers for EVERY Class
+        classes = sorted(student_summary['Class'].astype(str).unique())
+        for cls in classes:
+            cls_toppers = student_summary[student_summary['Class'].astype(str) == cls].sort_values(by='Overall_Percentage', ascending=False).head(3)
+            top_list = [f"{idx+1}. {r['Student_Name']} ({r['Overall_Percentage']:.1f}%)" for idx, (_, r) in enumerate(cls_toppers.iterrows())]
+            ticker_items.append(f"🥇 <b>Class {cls} Top 3:</b> {' | '.join(top_list)}")
+            
+        full_ticker_text = " &nbsp;&nbsp;&nbsp; ✦ &nbsp;&nbsp;&nbsp; ".join(ticker_items)
+        
+        st.markdown(
+            f"""
+            <div style="background-color: #FFF9C4; border-left: 5px solid #FBC02D; padding: 7px 10px; border-radius: 4px; color: #000; font-size: 15px;">
+                <marquee direction="left" scrollamount="6" behavior="scroll">{full_ticker_text}</marquee>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        st.write("")
+
+    # Class-wise Top 3 Hall of Fame Expander
+    if st.session_state["student_data"] is not None:
+        with st.expander("🏆 **HALL OF FAME - TOP 3 STUDENTS CLASS-WISE**", expanded=False):
+            df_data = st.session_state["student_data"]
+            student_summary = df_data.groupby(['Class', 'Student_Name', 'Roll_No']).agg(Overall_Percentage=('Percentage', 'mean')).reset_index()
+            
+            classes = sorted(student_summary['Class'].astype(str).unique())
+            for cls in classes:
+                st.markdown(f"#### 🏫 **Class {cls} - Top 3 Performers**")
+                cls_toppers = student_summary[student_summary['Class'].astype(str) == cls].sort_values(by='Overall_Percentage', ascending=False).head(3)
+                
+                t_cols = st.columns(3)
+                badges = ["🥇 1st Rank", "🥈 2nd Rank", "🥉 3rd Rank"]
+                
+                for idx, (_, topper) in enumerate(cls_toppers.iterrows()):
+                    with t_cols[idx]:
+                        top_photo = f"photos/students/{topper['Roll_No']}.png"
+                        if os.path.exists(top_photo):
+                            st.image(top_photo, width=100)
+                        else:
+                            st.info("📷 No Photo")
+                        st.markdown(f"**{badges[idx]}**")
+                        st.write(f"👤 **Name:** {topper['Student_Name']}")
+                        st.write(f"📌 **Roll No:** {topper['Roll_No']}")
+                        st.write(f"🎯 **Score:** {topper['Overall_Percentage']:.2f}%")
+                st.markdown("---")
+
+    st.header("🔎 Check Student Result")
+    
+    if st.session_state["student_data"] is None:
+        st.warning("⚠️ Data file not found. Kripya Admin Portal se Data Upload karein.")
+    else:
+        df = st.session_state["student_data"]
+        
+        search_method = st.radio("Choose Search Verification Method:", ["Option 1: Roll No & Date of Birth (DOB)", "Option 2: Roll No & Aadhaar Number"], horizontal=True)
+        
+        with st.form("search_form"):
+            c1, c2 = st.columns(2)
+            with c1:
+                selected_class = st.selectbox("Select Class", sorted(df['Class'].astype(str).unique()))
+                roll_no = st.text_input("Roll No")
+            
+            if "Option 1" in search_method:
+                with c2:
+                    dob_input = st.text_input("Date of Birth (Enter plain numbers or with hyphen)")
+            else:
+                with c2:
+                    aadhaar_input = st.text_input("Aadhaar Number (Enter plain numbers or with hyphen/space)")
+            
+            submit_btn = st.form_submit_button("🔍 View Result")
+
+        if submit_btn:
+            if "Option 1" in search_method:
+                filtered_df = df[
+                    (df['Class'].astype(str).str.strip().str.lower() == selected_class.strip().lower()) &
+                    (df['Roll_No'].astype(str).str.strip() == roll_no.strip()) &
+                    (df['DOB'].apply(clean_val) == clean_val(dob_input))
+                ]
+            else:
+                filtered_df = df[
+                    (df['Class'].astype(str).str.strip().str.lower() == selected_class.strip().lower()) &
+                    (df['Roll_No'].astype(str).str.strip() == roll_no.strip()) &
+                    (df['Aadhaar_No'].apply(clean_val) == clean_val(aadhaar_input))
+                ]
+            
+            if filtered_df.empty:
+                st.error("❌ Invalid Details! Kripya Roll No, DOB ya Aadhaar Number sahi se enter karein.")
+            else:
+                student_info = filtered_df.iloc[0]
+                log_parent_search(student_info['Roll_No'], student_info['Student_Name'], student_info['Class'])
+                
+                st.success(f"🎓 Result Found for: **{student_info['Student_Name']}**")
+                
+                r_col1, r_col2 = st.columns([1, 4])
+                with r_col1:
+                    photo_file = f"photos/students/{student_info['Roll_No']}.png"
+                    if os.path.exists(photo_file):
+                        st.image(photo_file, width=130)
+                    else:
+                        st.info("📷 Photo Not Uploaded")
+                
+                with r_col2:
+                    st.write(f"**Student Name:** {student_info['Student_Name']} | **Roll No:** {student_info['Roll_No']}")
+                    st.write(f"**Class:** {student_info['Class']} | **Class Teacher:** {student_info['Class_Teacher']}")
+                    st.write(f"**Father's Name:** {student_info['Father_Name']}")
+                
+                st.markdown("---")
+                
+                st.subheader("📈 Overall Performance Summary")
+                avg_pct = filtered_df['Percentage'].mean()
+                total_obtained = filtered_df['Total_Marks'].sum()
+                total_max = filtered_df['Max_Marks'].sum()
+                
+                k1, k2, k3 = st.columns(3)
+                k1.metric("Overall Average Score", f"{avg_pct:.2f}%")
+                k2.metric("Total Marks Obtained", f"{total_obtained} / {total_max}")
+                k3.metric("Overall Status", "PASS / EXCELLENT" if avg_pct >= 60 else "NEEDS IMPROVEMENT")
+                
+                st.markdown("---")
+
+                # Cumulative Exam Progression Table
+                st.subheader("📊 Cumulative Exam-Wise Performance Trend")
+                cum_summary = []
+                for _, r in filtered_df.iterrows():
+                    cum_summary.append({
+                        "Exam Name": r['Exam_Type'],
+                        "Marks Obtained": f"{r['Total_Marks']} / {r['Max_Marks']}",
+                        "Percentage (%)": f"{r['Percentage']:.2f}%",
+                        "Class Rank": f"#{r['Class_Rank']}",
+                        "Status / Feedback Comment": get_rank_comment(r['Class_Rank'])
+                    })
+                st.dataframe(pd.DataFrame(cum_summary), hide_index=True, use_container_width=True)
+
+                st.markdown("---")
+                
+                # Detailed Subject Scorecard
+                st.subheader("📝 Exam-Wise Detailed Subject Scorecard")
+                meta_cols = ['Class', 'Roll_No', 'Student_Name', 'Father_Name', 'DOB', 'Aadhaar_No', 'Exam_Type', 'Max_Marks', 'Class_Teacher', 'Total_Marks', 'Percentage', 'Class_Rank']
+                subject_cols = [col for col in df.columns if col not in meta_cols]
+                
+                for index, row in filtered_df.iterrows():
+                    with st.expander(f"📌 **{row['Exam_Type']}** | Score: {row['Total_Marks']}/{row['Max_Marks']} ({row['Percentage']:.2f}%) | Rank: #{row['Class_Rank']}", expanded=True):
+                        st.info(f"💡 **Teacher's Feedback Comment:** {get_rank_comment(row['Class_Rank'])}")
+                        
+                        subject_rows = []
+                        for s_no, sub_name in enumerate(subject_cols, start=1):
+                            subject_rows.append({
+                                'S.No.': s_no,
+                                'Subject Name': sub_name,
+                                'Marks Obtained': row[sub_name]
+                            })
+                        
+                        m_df = pd.DataFrame(subject_rows)
+                        st.dataframe(m_df, hide_index=True, use_container_width=True)
+
+
+# ==============================================================================
+# 🖼️ SCHOOL GALLERY (DYNAMIC FROM UPLOADS ONLY)
+# ==============================================================================
+elif menu == "🖼️ School Gallery":
+    st.header("🏫 Jawahar Navodaya Vidyalaya - Walking School Gallery")
+    st.markdown("---")
+    
+    gallery_files = [f for f in os.listdir("photos/gallery") if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+    
+    if len(gallery_files) == 0:
+        st.info("ℹ️ Gallery me abhi koi photo upload nahi hui hai. Kripya Admin Portal se Photos Upload karein.")
+    else:
+        import base64
+        images_html = ""
+        for img_name in gallery_files:
+            img_path = os.path.join("photos/gallery", img_name)
+            with open(img_path, "rb") as f:
+                enc = base64.b64encode(f.read()).decode()
+            images_html += f'<img src="data:image/png;base64,{enc}" style="height: 220px; margin-right: 20px; border-radius: 10px; border: 3px solid #1E88E5; display: inline-block;">'
+        
+        st.markdown(
+            f"""
+            <div style="width: 100%; overflow: hidden; background-color: rgba(0,0,0,0.03); padding: 15px; border-radius: 10px;">
+                <marquee direction="left" scrollamount="8" behavior="scroll">
+                    {images_html}
+                </marquee>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+
+# ==============================================================================
+# 🏆 BOARD EXAM RESULTS
+# ==============================================================================
+elif menu == "🏆 Board Exam Results":
+    st.header("🎓 CBSE Board Exam Hall of Fame (Class 10 & 12 Toppers)")
+    st.markdown("---")
+    
+    toppers_data = load_board_toppers()
+    if not toppers_data:
+        st.info("ℹ️ Board Exam Toppers details abhi upload nahi hue hain. Admin Portal se add karein.")
+    else:
+        b_col1, b_col2 = st.columns(2)
+        
+        with b_col1:
+            st.subheader("🥇 Class 12 CBSE Board Toppers")
+            c12_list = [t for t in toppers_data if "12" in t["class"]]
+            for t in c12_list:
+                tc1, tc2 = st.columns([1, 3])
+                with tc1:
+                    if os.path.exists(t["photo"]):
+                        st.image(t["photo"], width=100)
+                with tc2:
+                    st.write(f"🌟 **{t['name']}**")
+                    st.write(f"🎯 Score: **{t['percentage']}** ({t['year']})")
+                st.write("---")
+
+        with b_col2:
+            st.subheader("🥇 Class 10 CBSE Board Toppers")
+            c10_list = [t for t in toppers_data if "10" in t["class"]]
+            for t in c10_list:
+                tc1, tc2 = st.columns([1, 3])
+                with tc1:
+                    if os.path.exists(t["photo"]):
+                        st.image(t["photo"], width=100)
+                with tc2:
+                    st.write(f"🌟 **{t['name']}**")
+                    st.write(f"🎯 Score: **{t['percentage']}** ({t['year']})")
+                st.write("---")
 
 
 # ==============================================================================
 # ⚙️ ADMIN PORTAL
 # ==============================================================================
-if menu == "⚙️ Admin Portal":
+elif menu == "⚙️ Admin Portal":
     st.header("🔒 Admin Dashboard")
     st.info(f"👁️ **Total Website Visits Count:** `{total_visits}`")
     
@@ -166,8 +413,8 @@ if menu == "⚙️ Admin Portal":
             
         st.markdown("---")
         
-        # 1. System Media Management (Logo & Background)
-        st.subheader("🎨 School Branding & Site Background")
+        # 1. System Branding
+        st.subheader("🎨 School Branding & Background Settings")
         col_sys1, col_sys2 = st.columns(2)
         with col_sys1:
             up_logo = st.file_uploader("Upload School Logo (Top-Right)", type=["png", "jpg", "jpeg"], key="up_logo")
@@ -226,7 +473,7 @@ if menu == "⚙️ Admin Portal":
                     time_stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
                     img = Image.open(gal_photo)
                     img.save(f"photos/gallery/{time_stamp}.png")
-                    st.success("✅ Gallery Image Uploaded!")
+                    st.success("✅ Gallery Image Uploaded Successfully!")
                     st.rerun()
 
         st.markdown("---")
@@ -289,262 +536,16 @@ if menu == "⚙️ Admin Portal":
 
 
 # ==============================================================================
-# 👨‍🎓 PARENT PORTAL
-# ==============================================================================
-elif menu == "👨‍🎓 Parent Portal":
-    
-    # Floating / Scrolling Educational Quotes Ticker
-    quotes_text = "💡 <i>'Education is the most powerful weapon which you can use to change the world.'</i> | 📖 <i>'An investment in knowledge pays the best interest.'</i> | 🌟 <i>'Learning gives creativity, creativity leads to thinking, thinking provides knowledge, knowledge makes you great.'</i>"
-    st.markdown(
-        f"""
-        <div style="background-color: #2196F3; padding: 8px; border-radius: 5px; color: #fff; font-size: 15px; margin-bottom: 10px;">
-            <marquee scrollamount="5">{quotes_text}</marquee>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-    
-    # Flash News Ticker
-    if st.session_state["student_data"] is not None:
-        df_data = st.session_state["student_data"]
-        student_summary = df_data.groupby(['Class', 'Student_Name', 'Roll_No']).agg(Overall_Percentage=('Percentage', 'mean')).reset_index()
-        school_topper = student_summary.sort_values(by='Overall_Percentage', ascending=False).iloc[0]
-        
-        news_text = f"🏆 <b>OVERALL SCHOOL TOPPER:</b> {school_topper['Student_Name']} (Class {school_topper['Class']}) - {school_topper['Overall_Percentage']:.2f}% | "
-        st.markdown(
-            f"""
-            <div style="background-color: #ffeb3b; padding: 8px; border-radius: 5px; color: #000; font-size: 16px;">
-                <marquee scrollamount="6">{news_text}</marquee>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-        st.write("")
-
-    # TOP 3 CLASS-WISE TOPPERS HALL OF FAME
-    if st.session_state["student_data"] is not None:
-        with st.expander("🏆 **HALL OF FAME - TOP 3 STUDENTS CLASS-WISE**", expanded=False):
-            df_data = st.session_state["student_data"]
-            student_summary = df_data.groupby(['Class', 'Student_Name', 'Roll_No']).agg(Overall_Percentage=('Percentage', 'mean')).reset_index()
-            
-            classes = sorted(student_summary['Class'].unique())
-            for cls in classes:
-                st.markdown(f"#### 🏫 **Class {cls} - Top 3 Performers**")
-                cls_toppers = student_summary[student_summary['Class'] == cls].sort_values(by='Overall_Percentage', ascending=False).head(3)
-                
-                t_cols = st.columns(3)
-                badges = ["🥇 1st Rank", "🥈 2nd Rank", "🥉 3rd Rank"]
-                
-                for idx, (_, topper) in enumerate(cls_toppers.iterrows()):
-                    with t_cols[idx]:
-                        top_photo = f"photos/students/{topper['Roll_No']}.png"
-                        if os.path.exists(top_photo):
-                            st.image(top_photo, width=110)
-                        else:
-                            st.info("📷 No Photo")
-                        st.markdown(f"**{badges[idx]}**")
-                        st.write(f"👤 **Name:** {topper['Student_Name']}")
-                        st.write(f"📌 **Roll No:** {topper['Roll_No']}")
-                        st.write(f"🎯 **Score:** {topper['Overall_Percentage']:.2f}%")
-                st.markdown("---")
-
-    st.header("🔎 Check Student Result")
-    
-    if st.session_state["student_data"] is None:
-        st.warning("⚠️ Data file not found. Kripya Admin Portal se Data Upload karein.")
-    else:
-        df = st.session_state["student_data"]
-        
-        search_method = st.radio("Choose Search Verification Method:", ["Option 1: Roll No & Date of Birth (DOB)", "Option 2: Roll No & Aadhaar Number"], horizontal=True)
-        
-        with st.form("search_form"):
-            c1, c2, c3 = st.columns(3)
-            with c1:
-                selected_class = st.selectbox("Select Class", sorted(df['Class'].astype(str).unique()))
-                roll_no = st.text_input("Roll No")
-            
-            if "Option 1" in search_method:
-                with c2:
-                    dob_input = st.text_input("Date of Birth (Enter plain numbers or with hyphen)")
-                with c3:
-                    st.write("")
-            else:
-                with c2:
-                    aadhaar_input = st.text_input("Aadhaar Number (Enter plain numbers or with hyphen/space)")
-                with c3:
-                    st.write("")
-            
-            submit_btn = st.form_submit_button("🔍 View Result")
-
-        if submit_btn:
-            # Flexible Match Logic (Strips hyphen, spaces, slashes)
-            if "Option 1" in search_method:
-                filtered_df = df[
-                    (df['Class'].astype(str).str.strip().str.lower() == selected_class.strip().lower()) &
-                    (df['Roll_No'].astype(str).str.strip() == roll_no.strip()) &
-                    (df['DOB'].apply(clean_val) == clean_val(dob_input))
-                ]
-            else:
-                filtered_df = df[
-                    (df['Class'].astype(str).str.strip().str.lower() == selected_class.strip().lower()) &
-                    (df['Roll_No'].astype(str).str.strip() == roll_no.strip()) &
-                    (df['Aadhaar_No'].apply(clean_val) == clean_val(aadhaar_input))
-                ]
-            
-            if filtered_df.empty:
-                st.error("❌ Invalid Details! Kripya Roll No, DOB ya Aadhaar Number sahi se enter karein.")
-            else:
-                student_info = filtered_df.iloc[0]
-                log_parent_search(student_info['Roll_No'], student_info['Student_Name'], student_info['Class'])
-                
-                st.success(f"🎓 Result Found for: **{student_info['Student_Name']}**")
-                
-                r_col1, r_col2 = st.columns([1, 4])
-                with r_col1:
-                    photo_file = f"photos/students/{student_info['Roll_No']}.png"
-                    if os.path.exists(photo_file):
-                        st.image(photo_file, width=130)
-                    else:
-                        st.info("📷 Student Photo Not Uploaded")
-                
-                with r_col2:
-                    st.write(f"**Student Name:** {student_info['Student_Name']} | **Roll No:** {student_info['Roll_No']}")
-                    st.write(f"**Class:** {student_info['Class']} | **Class Teacher:** {student_info['Class_Teacher']}")
-                    st.write(f"**Father's Name:** {student_info['Father_Name']}")
-                
-                st.markdown("---")
-                
-                st.subheader("📈 Overall Performance Summary")
-                avg_pct = filtered_df['Percentage'].mean()
-                total_obtained = filtered_df['Total_Marks'].sum()
-                total_max = filtered_df['Max_Marks'].sum()
-                
-                k1, k2, k3 = st.columns(3)
-                k1.metric("Overall Average Score", f"{avg_pct:.2f}%")
-                k2.metric("Total Marks Obtained", f"{total_obtained} / {total_max}")
-                k3.metric("Overall Status", "PASS / EXCELLENT" if avg_pct >= 60 else "NEEDS IMPROVEMENT")
-                
-                st.markdown("---")
-
-                # CUMULATIVE EXAM PROGRESSION & RANK COMMENTS
-                st.subheader("📊 Cumulative Exam-Wise Performance Trend")
-                cum_summary = []
-                for _, r in filtered_df.iterrows():
-                    cum_summary.append({
-                        "Exam Name": r['Exam_Type'],
-                        "Marks Obtained": f"{r['Total_Marks']} / {r['Max_Marks']}",
-                        "Percentage (%)": f"{r['Percentage']:.2f}%",
-                        "Class Rank": f"#{r['Class_Rank']}",
-                        "Status / Feedback Comment": get_rank_comment(r['Class_Rank'])
-                    })
-                st.dataframe(pd.DataFrame(cum_summary), hide_index=True, use_container_width=True)
-
-                st.markdown("---")
-                
-                # DETAILED EXAM SCORECARD WITH 1-BASED SUBJECT INDEXING
-                st.subheader("📝 Exam-Wise Detailed Subject Scorecard")
-                meta_cols = ['Class', 'Roll_No', 'Student_Name', 'Father_Name', 'DOB', 'Aadhaar_No', 'Exam_Type', 'Max_Marks', 'Class_Teacher', 'Total_Marks', 'Percentage', 'Class_Rank']
-                subject_cols = [col for col in df.columns if col not in meta_cols]
-                
-                for index, row in filtered_df.iterrows():
-                    with st.expander(f"📌 **{row['Exam_Type']}** | Score: {row['Total_Marks']}/{row['Max_Marks']} ({row['Percentage']:.2f}%) | Rank: #{row['Class_Rank']}", expanded=True):
-                        st.info(f"💡 **Teacher's Feedback Comment:** {get_rank_comment(row['Class_Rank'])}")
-                        
-                        # Sequential Subject Formatting starting from 1
-                        subject_rows = []
-                        for s_no, sub_name in enumerate(subject_cols, start=1):
-                            subject_rows.append({
-                                'S.No.': s_no,
-                                'Subject Name': sub_name,
-                                'Marks Obtained': row[sub_name]
-                            })
-                        
-                        m_df = pd.DataFrame(subject_rows)
-                        st.dataframe(m_df, hide_index=True, use_container_width=True)
-
-
-# ==============================================================================
-# 🖼️ SCHOOL GALLERY (RIGHT TO LEFT MOVING SCROLL)
-# ==============================================================================
-elif menu == "🖼️ School Gallery":
-    st.header("🏫 Jawahar Navodaya Vidyalaya - Walking School Gallery")
-    st.markdown("---")
-    
-    gallery_files = os.listdir("photos/gallery")
-    if len(gallery_files) == 0:
-        st.info("Gallery me abhi koi photo upload nahi hui hai. Admin Portal se Upload karein.")
-    else:
-        import base64
-        images_html = ""
-        for img_name in gallery_files:
-            img_path = os.path.join("photos/gallery", img_name)
-            with open(img_path, "rb") as f:
-                enc = base64.b64encode(f.read()).decode()
-            images_html += f'<img src="data:image/png;base64,{enc}" style="height: 220px; margin-right: 20px; border-radius: 10px; border: 3px solid #FF9800; display: inline-block;">'
-        
-        st.markdown(
-            f"""
-            <div style="width: 100%; overflow: hidden; background-color: rgba(0,0,0,0.05); padding: 15px; border-radius: 10px;">
-                <marquee direction="left" scrollamount="8" behavior="scroll">
-                    {images_html}
-                </marquee>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
-
-# ==============================================================================
-# 🏆 BOARD EXAM RESULTS
-# ==============================================================================
-elif menu == "🏆 Board Exam Results":
-    st.header("🎓 CBSE Board Exam Hall of Fame (Class 10 & 12 Toppers)")
-    st.markdown("---")
-    
-    toppers_data = load_board_toppers()
-    if not toppers_data:
-        st.info("Board Exam Toppers details abhi upload nahi hue hain.")
-    else:
-        b_col1, b_col2 = st.columns(2)
-        
-        with b_col1:
-            st.subheader("🥇 Class 12 CBSE Board Toppers")
-            c12_list = [t for t in toppers_data if "12" in t["class"]]
-            for t in c12_list:
-                tc1, tc2 = st.columns([1, 3])
-                with tc1:
-                    if os.path.exists(t["photo"]):
-                        st.image(t["photo"], width=100)
-                with tc2:
-                    st.write(f"🌟 **{t['name']}**")
-                    st.write(f"🎯 Score: **{t['percentage']}** ({t['year']})")
-                st.write("---")
-
-        with b_col2:
-            st.subheader("🥇 Class 10 CBSE Board Toppers")
-            c10_list = [t for t in toppers_data if "10" in t["class"]]
-            for t in c10_list:
-                tc1, tc2 = st.columns([1, 3])
-                with tc1:
-                    if os.path.exists(t["photo"]):
-                        st.image(t["photo"], width=100)
-                with tc2:
-                    st.write(f"🌟 **{t['name']}**")
-                    st.write(f"🎯 Score: **{t['percentage']}** ({t['year']})")
-                st.write("---")
-
-
-# ==============================================================================
-# DEVELOPER CREDIT & COPYRIGHT FOOTER
+# DEVELOPER CREDIT & COPYRIGHT FOOTER (UPDATED FONT STYLING)
 # ==============================================================================
 st.markdown("---")
 st.markdown(
     """
-    <div style='text-align: center; padding: 10px;'>
-        <p style='font-family: "Brush Script MT", cursive, sans-serif; font-size: 32px; color: #E91E63; margin-bottom: 5px;'>
+    <div style='text-align: center; padding: 12px 0 5px 0;'>
+        <p style='font-family: "Georgia", "Times New Roman", serif; font-size: 26px; font-weight: bold; color: #1B365D; margin-bottom: 3px; letter-spacing: 0.5px;'>
             Developer: ANIL CHAUDHARY
         </p>
-        <p style='font-family: Arial, sans-serif; font-size: 14px; font-weight: bold; color: #333; letter-spacing: 1px;'>
+        <p style='font-family: Arial, sans-serif; font-size: 13px; font-weight: 600; color: #444444; letter-spacing: 0.8px;'>
             © COPYRIGHTS JNV CHHOTAUDEPUR ALL RIGHTS RESERVED
         </p>
     </div>
