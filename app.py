@@ -35,12 +35,18 @@ def get_rank_comment(rank):
     else:
         return "💪 Scope for Improvement! Focus on weaker subjects."
 
-# Background Image CSS Injection
-BG_PATH = "photos/system/background.png"
-if os.path.exists(BG_PATH):
+# Cached Background Image CSS Injection
+@st.cache_data
+def get_base64_image(image_path):
     import base64
-    with open(BG_PATH, "rb") as image_file:
-        encoded_string = base64.b64encode(image_file.read()).decode()
+    if os.path.exists(image_path):
+        with open(image_path, "rb") as image_file:
+            return base64.b64encode(image_file.read()).decode()
+    return None
+
+BG_PATH = "photos/system/background.png"
+encoded_string = get_base64_image(BG_PATH)
+if encoded_string:
     st.markdown(
         f"""
         <style>
@@ -146,60 +152,66 @@ if menu == "👨‍🎓 Parent Portal":
     if st.session_state["student_data"] is not None:
         df_data = st.session_state["student_data"]
         
-        # Identify the latest uploaded exam type
-        latest_exam = df_data['Exam_Type'].iloc[-1]
-        latest_df = df_data[df_data['Exam_Type'] == latest_exam].copy()
-        
-        # Overall School Topper for Latest Exam
-        school_topper = latest_df.sort_values(by='Percentage', ascending=False).iloc[0]
-        ticker_items = [f"🏆 <b>OVERALL SCHOOL TOPPER ({latest_exam}):</b> {school_topper['Student_Name']} (Class {school_topper['Class']}) - {school_topper['Percentage']:.2f}%"]
-        
-        # Top 3 Toppers for EVERY Class in Latest Exam
-        classes = sorted(latest_df['Class'].astype(str).unique())
-        for cls in classes:
-            cls_toppers = latest_df[latest_df['Class'].astype(str) == cls].sort_values(by='Percentage', ascending=False).head(3)
-            top_list = [f"{idx+1}. {r['Student_Name']} ({r['Percentage']:.1f}%)" for idx, (_, r) in enumerate(cls_toppers.iterrows())]
-            ticker_items.append(f"🥇 <b>Class {cls} ({latest_exam}) Top 3:</b> {' | '.join(top_list)}")
+        if not df_data.empty and 'Exam_Type' in df_data.columns:
+            # Identify the latest uploaded exam type dynamically
+            latest_exam = df_data['Exam_Type'].dropna().iloc[-1]
+            latest_df = df_data[df_data['Exam_Type'] == latest_exam].copy()
             
-        full_ticker_text = " &nbsp;&nbsp;&nbsp; ✦ &nbsp;&nbsp;&nbsp; ".join(ticker_items)
-        
-        st.markdown(
-            f"""
-            <div style="background-color: #FFF9C4; border-left: 5px solid #FBC02D; padding: 7px 10px; border-radius: 4px; color: #000; font-size: 15px;">
-                <marquee direction="left" scrollamount="6" behavior="scroll">{full_ticker_text}</marquee>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-        st.write("")
+            if not latest_df.empty:
+                # Overall School Topper for Latest Exam
+                school_topper = latest_df.sort_values(by='Percentage', ascending=False).iloc[0]
+                ticker_items = [
+                    f"🏆 <b>OVERALL SCHOOL TOPPER ({latest_exam}):</b> {school_topper['Student_Name']} (Class {school_topper['Class']}) - {school_topper['Percentage']:.2f}%"
+                ]
+                
+                # Top 3 Toppers for EVERY Class in Latest Exam
+                classes = sorted(latest_df['Class'].astype(str).unique())
+                for cls in classes:
+                    cls_toppers = latest_df[latest_df['Class'].astype(str) == cls].sort_values(by='Percentage', ascending=False).head(3)
+                    top_list = [f"{idx+1}. {r['Student_Name']} ({r['Percentage']:.1f}%)" for idx, (_, r) in enumerate(cls_toppers.iterrows())]
+                    ticker_items.append(f"🥇 <b>Class {cls} ({latest_exam}) Top 3:</b> {' | '.join(top_list)}")
+                    
+                full_ticker_text = " &nbsp;&nbsp;&nbsp; ✦ &nbsp;&nbsp;&nbsp; ".join(ticker_items)
+                
+                st.markdown(
+                    f"""
+                    <div style="background-color: #FFF9C4; border-left: 5px solid #FBC02D; padding: 7px 10px; border-radius: 4px; color: #000; font-size: 15px;">
+                        <marquee direction="left" scrollamount="6" behavior="scroll">{full_ticker_text}</marquee>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+                st.write("")
 
     # 2. Class-wise Top 3 Hall of Fame Expander: LAST UPLOADED EXAM ONLY
     if st.session_state["student_data"] is not None:
         df_data = st.session_state["student_data"]
-        latest_exam = df_data['Exam_Type'].iloc[-1]
-        latest_df = df_data[df_data['Exam_Type'] == latest_exam].copy()
-        
-        with st.expander(f"🏆 **HALL OF FAME - TOP 3 STUDENTS CLASS-WISE ({latest_exam})**", expanded=False):
-            classes = sorted(latest_df['Class'].astype(str).unique())
-            for cls in classes:
-                st.markdown(f"#### 🏫 **Class {cls} - Top 3 Performers ({latest_exam})**")
-                cls_toppers = latest_df[latest_df['Class'].astype(str) == cls].sort_values(by='Percentage', ascending=False).head(3)
-                
-                t_cols = st.columns(3)
-                badges = ["🥇 1st Rank", "🥈 2nd Rank", "🥉 3rd Rank"]
-                
-                for idx, (_, topper) in enumerate(cls_toppers.iterrows()):
-                    with t_cols[idx]:
-                        top_photo = f"photos/students/{topper['Roll_No']}.png"
-                        if os.path.exists(top_photo):
-                            st.image(top_photo, width=100)
-                        else:
-                            st.info("📷 No Photo")
-                        st.markdown(f"**{badges[idx]}**")
-                        st.write(f"👤 **Name:** {topper['Student_Name']}")
-                        st.write(f"📌 **Roll No:** {topper['Roll_No']}")
-                        st.write(f"🎯 **Score:** {topper['Percentage']:.2f}%")
-                st.markdown("---")
+        if not df_data.empty and 'Exam_Type' in df_data.columns:
+            latest_exam = df_data['Exam_Type'].dropna().iloc[-1]
+            latest_df = df_data[df_data['Exam_Type'] == latest_exam].copy()
+            
+            with st.expander(f"🏆 **HALL OF FAME - TOP 3 STUDENTS CLASS-WISE ({latest_exam})**", expanded=False):
+                classes = sorted(latest_df['Class'].astype(str).unique())
+                for cls in classes:
+                    st.markdown(f"#### 🏫 **Class {cls} - Top 3 Performers ({latest_exam})**")
+                    cls_toppers = latest_df[latest_df['Class'].astype(str) == cls].sort_values(by='Percentage', ascending=False).head(3)
+                    
+                    t_cols = st.columns(3)
+                    badges = ["🥇 1st Rank", "🥈 2nd Rank", "🥉 3rd Rank"]
+                    
+                    for idx, (_, topper) in enumerate(cls_toppers.iterrows()):
+                        if idx < len(t_cols):
+                            with t_cols[idx]:
+                                top_photo = f"photos/students/{topper['Roll_No']}.png"
+                                if os.path.exists(top_photo):
+                                    st.image(top_photo, width=100)
+                                else:
+                                    st.info("📷 No Photo")
+                                st.markdown(f"**{badges[idx]}**")
+                                st.write(f"👤 **Name:** {topper['Student_Name']}")
+                                st.write(f"📌 **Roll No:** {topper['Roll_No']}")
+                                st.write(f"🎯 **Score:** {topper['Percentage']:.2f}%")
+                    st.markdown("---")
 
     st.header("🔎 Check Student Result")
     
@@ -311,7 +323,7 @@ if menu == "👨‍🎓 Parent Portal":
 
 
 # ==============================================================================
-# 🖼️ SCHOOL GALLERY (CLEARED / ONLY SHOWS FRESH UPLOADS)
+# 🖼️ SCHOOL GALLERY
 # ==============================================================================
 elif menu == "🖼️ School Gallery":
     st.header("🏫 Jawahar Navodaya Vidyalaya - Walking School Gallery")
@@ -343,7 +355,7 @@ elif menu == "🖼️ School Gallery":
 
 
 # ==============================================================================
-# 🏆 BOARD EXAM RESULTS (SHOWING TOP 3 BOARD TOPPERS WITH PHOTO)
+# 🏆 BOARD EXAM RESULTS
 # ==============================================================================
 elif menu == "🏆 Board Exam Results":
     st.header("🎓 CBSE Board Exam Hall of Fame (Top 3 Toppers)")
@@ -432,12 +444,14 @@ elif menu == "⚙️ Admin Portal":
                     if up_logo:
                         img = Image.open(up_logo)
                         img.save(LOGO_PATH)
+                        st.cache_data.clear()
                         st.success("✅ School Logo Saved!")
                         st.rerun()
             with btn_c2:
                 if st.button("❌ Remove Logo"):
                     if os.path.exists(LOGO_PATH):
                         os.remove(LOGO_PATH)
+                        st.cache_data.clear()
                         st.success("✅ Logo Removed!")
                         st.rerun()
 
@@ -449,18 +463,20 @@ elif menu == "⚙️ Admin Portal":
                     if up_bg:
                         img = Image.open(up_bg)
                         img.save(BG_PATH)
+                        st.cache_data.clear()
                         st.success("✅ Background Image Applied!")
                         st.rerun()
             with bg_c2:
                 if st.button("❌ Remove Background"):
                     if os.path.exists(BG_PATH):
                         os.remove(BG_PATH)
+                        st.cache_data.clear()
                         st.success("✅ Background Removed!")
                         st.rerun()
 
         st.markdown("---")
         
-        # 2. Upload Student & Gallery Photos (With Clear Gallery Option)
+        # 2. Upload Student & Gallery Photos
         st.subheader("📸 Media Uploads (Students & Gallery)")
         col_u1, col_u2 = st.columns(2)
         with col_u1:
