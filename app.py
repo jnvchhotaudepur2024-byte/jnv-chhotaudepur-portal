@@ -120,27 +120,21 @@ def load_board_toppers():
             return json.load(f)
     return []
 
-# Dynamic Top Header with Compact Space-Saving Menu
-top_head_col1, top_head_col2, top_head_col3 = st.columns([3, 1.2, 0.8])
+# 1. Sidebar Navigation Menu (Reverted to previous sidebar layout)
+st.sidebar.title("📌 Navigation")
+menu = st.sidebar.radio("Select Portal / Page:", ["👨‍🎓 Parent Portal", "🖼️ School Gallery", "🏆 Board Exam Results", "⚙️ Admin Portal"])
 
-with top_head_col1:
-    st.markdown("<h2 style='margin:0; padding:0; color:#0D47A1;'>🏫 Jawahar Navodaya Vidyalaya, Chhotaudepur</h2>", unsafe_allow_html=True)
-    st.markdown("<p style='margin:0; font-weight:bold; color:#555;'>📊 Student Performance & Result Portal</p>", unsafe_allow_html=True)
-
-with top_head_col2:
-    # Space-saving Dropdown Navigation Menu
-    menu = st.selectbox(
-        "Navigation",
-        ["👨‍🎓 Parent Portal", "🖼️ School Gallery", "🏆 Board Exam Results", "⚙️ Admin Portal"],
-        label_visibility="collapsed"
-    )
-
-with top_head_col3:
+# Top Header Layout
+head_col1, head_col2 = st.columns([4, 1])
+with head_col1:
+    st.title("🏫 Jawahar Navodaya Vidyalaya, Chhotaudepur")
+    st.subheader("📊 Student Performance & Result Portal")
+with head_col2:
     LOGO_PATH = "photos/system/logo.png"
     if os.path.exists(LOGO_PATH):
-        st.image(LOGO_PATH, width=90)
+        st.image(LOGO_PATH, width=110)
 
-st.markdown("<hr style='margin: 8px 0;'>", unsafe_allow_html=True)
+st.markdown("---")
 
 
 # ==============================================================================
@@ -148,7 +142,7 @@ st.markdown("<hr style='margin: 8px 0;'>", unsafe_allow_html=True)
 # ==============================================================================
 if menu == "👨‍🎓 Parent Portal":
     
-    # 1. Continuous Right-to-Left Ticker: School Topper + All Classes Top 3 Toppers
+    # Continuous Right-to-Left Ticker: School Topper + Top 3 Toppers of Every Class
     if st.session_state["student_data"] is not None:
         df_data = st.session_state["student_data"]
         student_summary = df_data.groupby(['Class', 'Student_Name', 'Roll_No']).agg(Overall_Percentage=('Percentage', 'mean')).reset_index()
@@ -313,7 +307,7 @@ if menu == "👨‍🎓 Parent Portal":
 
 
 # ==============================================================================
-# 🖼️ SCHOOL GALLERY (DYNAMIC FROM UPLOADS ONLY)
+# 🖼️ SCHOOL GALLERY (CLEARED / ONLY SHOWS FRESH UPLOADS)
 # ==============================================================================
 elif menu == "🖼️ School Gallery":
     st.header("🏫 Jawahar Navodaya Vidyalaya - Walking School Gallery")
@@ -322,7 +316,7 @@ elif menu == "🖼️ School Gallery":
     gallery_files = [f for f in os.listdir("photos/gallery") if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
     
     if len(gallery_files) == 0:
-        st.info("ℹ️ Gallery me abhi koi photo upload nahi hui hai. Kripya Admin Portal se Photos Upload karein.")
+        st.info("ℹ️ Gallery abhi khali hai. Admin Portal se nayi photos upload karein.")
     else:
         import base64
         images_html = ""
@@ -345,10 +339,10 @@ elif menu == "🖼️ School Gallery":
 
 
 # ==============================================================================
-# 🏆 BOARD EXAM RESULTS
+# 🏆 BOARD EXAM RESULTS (SHOWING TOP 3 BOARD TOPPERS WITH PHOTO)
 # ==============================================================================
 elif menu == "🏆 Board Exam Results":
-    st.header("🎓 CBSE Board Exam Hall of Fame (Class 10 & 12 Toppers)")
+    st.header("🎓 CBSE Board Exam Hall of Fame (Top 3 Toppers)")
     st.markdown("---")
     
     toppers_data = load_board_toppers()
@@ -357,29 +351,39 @@ elif menu == "🏆 Board Exam Results":
     else:
         b_col1, b_col2 = st.columns(2)
         
+        # Class 12 Top 3
         with b_col1:
-            st.subheader("🥇 Class 12 CBSE Board Toppers")
-            c12_list = [t for t in toppers_data if "12" in t["class"]]
-            for t in c12_list:
+            st.subheader("🥇 Class 12 CBSE Board - Top 3 Toppers")
+            c12_list = [t for t in toppers_data if "12" in t["class"]][:3]
+            if not c12_list:
+                st.write("Class 12 toppers data available nahi hai.")
+            for rank_idx, t in enumerate(c12_list, start=1):
                 tc1, tc2 = st.columns([1, 3])
                 with tc1:
                     if os.path.exists(t["photo"]):
-                        st.image(t["photo"], width=100)
+                        st.image(t["photo"], width=110)
+                    else:
+                        st.info("📷 No Photo")
                 with tc2:
-                    st.write(f"🌟 **{t['name']}**")
+                    st.write(f"🏆 **Rank #{rank_idx}: {t['name']}**")
                     st.write(f"🎯 Score: **{t['percentage']}** ({t['year']})")
                 st.write("---")
 
+        # Class 10 Top 3
         with b_col2:
-            st.subheader("🥇 Class 10 CBSE Board Toppers")
-            c10_list = [t for t in toppers_data if "10" in t["class"]]
-            for t in c10_list:
+            st.subheader("🥇 Class 10 CBSE Board - Top 3 Toppers")
+            c10_list = [t for t in toppers_data if "10" in t["class"]][:3]
+            if not c10_list:
+                st.write("Class 10 toppers data available nahi hai.")
+            for rank_idx, t in enumerate(c10_list, start=1):
                 tc1, tc2 = st.columns([1, 3])
                 with tc1:
                     if os.path.exists(t["photo"]):
-                        st.image(t["photo"], width=100)
+                        st.image(t["photo"], width=110)
+                    else:
+                        st.info("📷 No Photo")
                 with tc2:
-                    st.write(f"🌟 **{t['name']}**")
+                    st.write(f"🏆 **Rank #{rank_idx}: {t['name']}**")
                     st.write(f"🎯 Score: **{t['percentage']}** ({t['year']})")
                 st.write("---")
 
@@ -452,7 +456,7 @@ elif menu == "⚙️ Admin Portal":
 
         st.markdown("---")
         
-        # 2. Upload Student & Gallery Photos
+        # 2. Upload Student & Gallery Photos (With Clear Gallery Option)
         st.subheader("📸 Media Uploads (Students & Gallery)")
         col_u1, col_u2 = st.columns(2)
         with col_u1:
@@ -468,12 +472,22 @@ elif menu == "⚙️ Admin Portal":
 
         with col_u2:
             gal_photo = st.file_uploader("School Gallery Image", type=["jpg", "jpeg", "png"], key="gal_photo")
-            if st.button("Upload to Gallery"):
-                if gal_photo:
-                    time_stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                    img = Image.open(gal_photo)
-                    img.save(f"photos/gallery/{time_stamp}.png")
-                    st.success("✅ Gallery Image Uploaded Successfully!")
+            g_btn1, g_btn2 = st.columns(2)
+            with g_btn1:
+                if st.button("Upload to Gallery"):
+                    if gal_photo:
+                        time_stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                        img = Image.open(gal_photo)
+                        img.save(f"photos/gallery/{time_stamp}.png")
+                        st.success("✅ Gallery Image Uploaded Successfully!")
+                        st.rerun()
+            with g_btn2:
+                if st.button("🗑️ Clear All Gallery Photos"):
+                    for file in os.listdir("photos/gallery"):
+                        file_path = os.path.join("photos/gallery", file)
+                        if os.path.isfile(file_path):
+                            os.remove(file_path)
+                    st.success("✅ Sabhi Gallery Photos Delete Ho Gayi Hain!")
                     st.rerun()
 
         st.markdown("---")
@@ -542,10 +556,10 @@ st.markdown("---")
 st.markdown(
     """
     <div style='text-align: center; padding: 12px 0 5px 0;'>
-        <p style='font-family: "Georgia", "Times New Roman", serif; font-size: 26px; font-weight: bold; color: #1B365D; margin-bottom: 3px; letter-spacing: 0.5px;'>
+        <p style='font-family: "Trebuchet MS", "Segoe UI", sans-serif; font-size: 22px; font-weight: bold; color: #1E88E5; margin-bottom: 3px;'>
             Developer: ANIL CHAUDHARY
         </p>
-        <p style='font-family: Arial, sans-serif; font-size: 13px; font-weight: 600; color: #444444; letter-spacing: 0.8px;'>
+        <p style='font-family: Arial, sans-serif; font-size: 12px; font-weight: 600; color: #444444; letter-spacing: 0.8px;'>
             © COPYRIGHTS JNV CHHOTAUDEPUR ALL RIGHTS RESERVED
         </p>
     </div>
