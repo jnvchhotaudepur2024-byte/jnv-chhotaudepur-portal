@@ -120,7 +120,7 @@ def load_board_toppers():
             return json.load(f)
     return []
 
-# 1. Sidebar Navigation Menu (Reverted to previous sidebar layout)
+# Sidebar Navigation
 st.sidebar.title("📌 Navigation")
 menu = st.sidebar.radio("Select Portal / Page:", ["👨‍🎓 Parent Portal", "🖼️ School Gallery", "🏆 Board Exam Results", "⚙️ Admin Portal"])
 
@@ -142,21 +142,24 @@ st.markdown("---")
 # ==============================================================================
 if menu == "👨‍🎓 Parent Portal":
     
-    # Continuous Right-to-Left Ticker: School Topper + Top 3 Toppers of Every Class
+    # 1. Continuous Right-to-Left Ticker: LAST UPLOADED EXAM ONLY
     if st.session_state["student_data"] is not None:
         df_data = st.session_state["student_data"]
-        student_summary = df_data.groupby(['Class', 'Student_Name', 'Roll_No']).agg(Overall_Percentage=('Percentage', 'mean')).reset_index()
         
-        # Overall School Topper
-        school_topper = student_summary.sort_values(by='Overall_Percentage', ascending=False).iloc[0]
-        ticker_items = [f"🏆 <b>OVERALL SCHOOL TOPPER:</b> {school_topper['Student_Name']} (Class {school_topper['Class']}) - {school_topper['Overall_Percentage']:.2f}%"]
+        # Identify the latest uploaded exam type
+        latest_exam = df_data['Exam_Type'].iloc[-1]
+        latest_df = df_data[df_data['Exam_Type'] == latest_exam].copy()
         
-        # Top 3 Toppers for EVERY Class
-        classes = sorted(student_summary['Class'].astype(str).unique())
+        # Overall School Topper for Latest Exam
+        school_topper = latest_df.sort_values(by='Percentage', ascending=False).iloc[0]
+        ticker_items = [f"🏆 <b>OVERALL SCHOOL TOPPER ({latest_exam}):</b> {school_topper['Student_Name']} (Class {school_topper['Class']}) - {school_topper['Percentage']:.2f}%"]
+        
+        # Top 3 Toppers for EVERY Class in Latest Exam
+        classes = sorted(latest_df['Class'].astype(str).unique())
         for cls in classes:
-            cls_toppers = student_summary[student_summary['Class'].astype(str) == cls].sort_values(by='Overall_Percentage', ascending=False).head(3)
-            top_list = [f"{idx+1}. {r['Student_Name']} ({r['Overall_Percentage']:.1f}%)" for idx, (_, r) in enumerate(cls_toppers.iterrows())]
-            ticker_items.append(f"🥇 <b>Class {cls} Top 3:</b> {' | '.join(top_list)}")
+            cls_toppers = latest_df[latest_df['Class'].astype(str) == cls].sort_values(by='Percentage', ascending=False).head(3)
+            top_list = [f"{idx+1}. {r['Student_Name']} ({r['Percentage']:.1f}%)" for idx, (_, r) in enumerate(cls_toppers.iterrows())]
+            ticker_items.append(f"🥇 <b>Class {cls} ({latest_exam}) Top 3:</b> {' | '.join(top_list)}")
             
         full_ticker_text = " &nbsp;&nbsp;&nbsp; ✦ &nbsp;&nbsp;&nbsp; ".join(ticker_items)
         
@@ -170,16 +173,17 @@ if menu == "👨‍🎓 Parent Portal":
         )
         st.write("")
 
-    # Class-wise Top 3 Hall of Fame Expander
+    # 2. Class-wise Top 3 Hall of Fame Expander: LAST UPLOADED EXAM ONLY
     if st.session_state["student_data"] is not None:
-        with st.expander("🏆 **HALL OF FAME - TOP 3 STUDENTS CLASS-WISE**", expanded=False):
-            df_data = st.session_state["student_data"]
-            student_summary = df_data.groupby(['Class', 'Student_Name', 'Roll_No']).agg(Overall_Percentage=('Percentage', 'mean')).reset_index()
-            
-            classes = sorted(student_summary['Class'].astype(str).unique())
+        df_data = st.session_state["student_data"]
+        latest_exam = df_data['Exam_Type'].iloc[-1]
+        latest_df = df_data[df_data['Exam_Type'] == latest_exam].copy()
+        
+        with st.expander(f"🏆 **HALL OF FAME - TOP 3 STUDENTS CLASS-WISE ({latest_exam})**", expanded=False):
+            classes = sorted(latest_df['Class'].astype(str).unique())
             for cls in classes:
-                st.markdown(f"#### 🏫 **Class {cls} - Top 3 Performers**")
-                cls_toppers = student_summary[student_summary['Class'].astype(str) == cls].sort_values(by='Overall_Percentage', ascending=False).head(3)
+                st.markdown(f"#### 🏫 **Class {cls} - Top 3 Performers ({latest_exam})**")
+                cls_toppers = latest_df[latest_df['Class'].astype(str) == cls].sort_values(by='Percentage', ascending=False).head(3)
                 
                 t_cols = st.columns(3)
                 badges = ["🥇 1st Rank", "🥈 2nd Rank", "🥉 3rd Rank"]
@@ -194,7 +198,7 @@ if menu == "👨‍🎓 Parent Portal":
                         st.markdown(f"**{badges[idx]}**")
                         st.write(f"👤 **Name:** {topper['Student_Name']}")
                         st.write(f"📌 **Roll No:** {topper['Roll_No']}")
-                        st.write(f"🎯 **Score:** {topper['Overall_Percentage']:.2f}%")
+                        st.write(f"🎯 **Score:** {topper['Percentage']:.2f}%")
                 st.markdown("---")
 
     st.header("🔎 Check Student Result")
@@ -550,7 +554,7 @@ elif menu == "⚙️ Admin Portal":
 
 
 # ==============================================================================
-# DEVELOPER CREDIT & COPYRIGHT FOOTER (UPDATED FONT STYLING)
+# DEVELOPER CREDIT & COPYRIGHT FOOTER
 # ==============================================================================
 st.markdown("---")
 st.markdown(
