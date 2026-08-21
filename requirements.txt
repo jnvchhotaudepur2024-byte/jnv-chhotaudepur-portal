@@ -1,4 +1,7 @@
 streamlit
 pandas
+numpy
+Pillow
 openpyxl
+plotly
 reportlab
