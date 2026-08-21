@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import os
 import shutil
 import re
@@ -53,6 +54,12 @@ os.makedirs("photos/gallery", exist_ok=True)
 os.makedirs("photos/board", exist_ok=True)
 os.makedirs("photos/system", exist_ok=True)
 os.makedirs("backups", exist_ok=True)
+
+# Master Subject List (Class 6-10 & Class 11-12 PCM/PCB Streams)
+ALL_SUBJECTS = [
+    'Gujarati', 'Hindi', 'English', 'Mathematics', 
+    'Science', 'Social_Science', 'Physics', 'Chemistry', 'Biology'
+]
 
 # Helper Function: Clean Alphanumeric String
 def clean_val(val):
@@ -126,7 +133,7 @@ def log_parent_search(roll_no, student_name, selected_class):
     else:
         new_data.to_csv(log_file, mode='w', header=True, index=False)
 
-# VLOOKUP-Style Excel Processor
+# VLOOKUP-Style Excel Processor (Updated with Stream Logic & Dynamic Null Handling)
 def process_data_excel(excel_file_source):
     xls = pd.ExcelFile(excel_file_source)
     sheet_names = xls.sheet_names
@@ -149,14 +156,24 @@ def process_data_excel(excel_file_source):
         if col not in df.columns:
             df[col] = ""
 
+    # Ensure all master subjects exist in columns
+    for sub in ALL_SUBJECTS:
+        if sub not in df.columns:
+            df[sub] = np.nan
+
+    # Convert subject columns to numeric values safely
+    for col in ALL_SUBJECTS:
+        df[col] = pd.to_numeric(df[col], errors='coerce')
+
+    # Sum only non-empty/active subjects for each student
+    df['Total_Marks'] = df[ALL_SUBJECTS].sum(axis=1, skipna=True)
+
     if 'Max_Marks' not in df.columns or df['Max_Marks'].isnull().all():
         df['Max_Marks'] = df['Exam_Type'].apply(lambda x: 150 if 'PWT' in str(x).upper() else 600)
 
-    subject_cols = [col for col in df.columns if col not in meta_cols and not str(col).endswith('_basic') and col not in ['Total_Marks', 'Percentage', 'Class_Rank']]
-
-    df['Total_Marks'] = df[subject_cols].apply(pd.to_numeric, errors='coerce').fillna(0).sum(axis=1)
     df['Max_Marks'] = pd.to_numeric(df['Max_Marks'], errors='coerce').fillna(600)
     df['Percentage'] = (df['Total_Marks'] / df['Max_Marks']) * 100
+    df['Percentage'] = df['Percentage'].round(2)
     df['Class_Rank'] = df.groupby(['Class', 'Exam_Type'])['Total_Marks'].rank(ascending=False, method='min').fillna(0).astype(int)
     
     return df
@@ -183,8 +200,8 @@ def load_board_toppers():
             return json.load(f)
     return []
 
-# Helper Function: PDF Generator Function using ReportLab
-def generate_pdf_scorecard(student_info, filtered_df, subject_cols):
+# Helper Function: PDF Generator Function using ReportLab (Filters Active Subjects)
+def generate_pdf_scorecard(student_info, filtered_df):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer,
@@ -247,13 +264,16 @@ def generate_pdf_scorecard(student_info, filtered_df, subject_cols):
     story.append(Spacer(1, 15))
 
     for _, row in filtered_df.iterrows():
-        exam_header = f"<b>Exam:</b> {row['Exam_Type']} &nbsp;|&nbsp; <b>Score:</b> {row['Total_Marks']}/{row['Max_Marks']} ({row['Percentage']:.2f}%) &nbsp;|&nbsp; <b>Rank:</b> #{row['Class_Rank']}"
+        exam_header = f"<b>Exam:</b> {row['Exam_Type']} &nbsp;|&nbsp; <b>Score:</b> {int(row['Total_Marks'])}/{int(row['Max_Marks'])} ({row['Percentage']:.2f}%) &nbsp;|&nbsp; <b>Rank:</b> #{row['Class_Rank']}"
         story.append(Paragraph(exam_header, styles['Heading3']))
         story.append(Spacer(1, 5))
 
         table_data = [["S.No.", "Subject Name", "Marks Obtained"]]
-        for idx, sub_name in enumerate(subject_cols, start=1):
-            table_data.append([str(idx), str(sub_name), str(row[sub_name])])
+        active_subs = [s for s in ALL_SUBJECTS if s in row and pd.notna(row[s])]
+        for idx, sub_name in enumerate(active_subs, start=1):
+            val = row[sub_name]
+            val_str = str(int(val)) if pd.notna(val) and float(val).is_integer() else str(val)
+            table_data.append([str(idx), str(sub_name), val_str])
 
         score_table = Table(table_data, colWidths=[50, 320, 150])
         score_table.setStyle(TableStyle([
@@ -400,10 +420,7 @@ if menu == "👨‍🎓 PARENT PORTAL":
                 student_info = filtered_df.iloc[0]
                 log_parent_search(student_info['Roll_No'], student_info['Student_Name'], student_info['Class'])
                 
-                meta_cols = ['Class', 'Roll_No', 'Student_Name', 'Father_Name', 'DOB', 'Aadhaar_No', 'Mobile_No', 'Exam_Type', 'Max_Marks', 'Class_Teacher', 'Total_Marks', 'Percentage', 'Class_Rank']
-                subject_cols = [col for col in df.columns if col not in meta_cols and not str(col).endswith('_basic')]
-                
-                pdf_bytes = generate_pdf_scorecard(student_info, filtered_df, subject_cols)
+                pdf_bytes = generate_pdf_scorecard(student_info, filtered_df)
 
                 st.success(f"🎓 Result Found for: **{student_info['Student_Name']}**")
                 
@@ -432,13 +449,13 @@ if menu == "👨‍🎓 PARENT PORTAL":
                 
                 st.subheader("📈 OVERALL PERFORMANCE SUMMARY")
                 avg_pct = filtered_df['Percentage'].mean()
-                total_obtained = filtered_df['Total_Marks'].sum()
-                total_max = filtered_df['Max_Marks'].sum()
+                total_obtained = int(filtered_df['Total_Marks'].sum())
+                total_max = int(filtered_df['Max_Marks'].sum())
                 
                 k1, k2, k3 = st.columns(3)
                 k1.metric("Overall Average Score", f"{avg_pct:.2f}%")
                 k2.metric("Total Marks Obtained", f"{total_obtained} / {total_max}")
-                k3.metric("Overall Status", "PASS / EXCELLENT" if avg_pct >= 60 else "NEEDS IMPROVEMENT")
+                k3.metric("Overall Status", "PASS / EXCELLENT" if avg_pct >= 33 else "NEEDS IMPROVEMENT")
                 
                 st.markdown("---")
 
@@ -447,7 +464,7 @@ if menu == "👨‍🎓 PARENT PORTAL":
                 for _, r in filtered_df.iterrows():
                     cum_summary.append({
                         "Exam Name": r['Exam_Type'],
-                        "Marks Obtained": f"{r['Total_Marks']} / {r['Max_Marks']}",
+                        "Marks Obtained": f"{int(r['Total_Marks'])} / {int(r['Max_Marks'])}",
                         "Percentage (%)": f"{r['Percentage']:.2f}%",
                         "Class Rank": f"#{r['Class_Rank']}",
                         "Status / Feedback Comment": get_rank_comment(r['Class_Rank'])
@@ -459,16 +476,21 @@ if menu == "👨‍🎓 PARENT PORTAL":
                 st.subheader("📝 EXAM-WISE DETAILED SUBJECT SCORECARD")
                 
                 for index, row in filtered_df.iterrows():
-                    with st.expander(f"📌 **{row['Exam_Type']}** | Score: {row['Total_Marks']}/{row['Max_Marks']} ({row['Percentage']:.2f}%) | Rank: #{row['Class_Rank']}", expanded=True):
+                    with st.expander(f"📌 **{row['Exam_Type']}** | Score: {int(row['Total_Marks'])}/{int(row['Max_Marks'])} ({row['Percentage']:.2f}%) | Rank: #{row['Class_Rank']}", expanded=True):
                         st.info(f"💡 **Teacher's Feedback Comment:** {get_rank_comment(row['Class_Rank'])}")
                         
                         subject_rows = []
-                        for s_no, sub_name in enumerate(subject_cols, start=1):
-                            subject_rows.append({
-                                'S.No.': s_no,
-                                'Subject Name': sub_name,
-                                'Marks Obtained': row[sub_name]
-                            })
+                        s_no = 1
+                        for sub_name in ALL_SUBJECTS:
+                            if pd.notna(row[sub_name]):
+                                val = row[sub_name]
+                                val_formatted = int(val) if float(val).is_integer() else val
+                                subject_rows.append({
+                                    'S.No.': s_no,
+                                    'Subject Name': sub_name,
+                                    'Marks Obtained': val_formatted
+                                })
+                                s_no += 1
                         
                         m_df = pd.DataFrame(subject_rows)
                         st.dataframe(m_df, hide_index=True, use_container_width=True)
@@ -762,7 +784,7 @@ elif menu == "⚙️ ADMIN PORTAL":
         
         # 6. Excel Upload with Auto-Backup & VLOOKUP Auto Merge
         st.subheader("📤 EXCEL DATA UPLOAD (WITH VLOOKUP & AUTO-BACKUP)")
-        st.info("💡 Tip: Multi-sheet Excel support enabled! Sheet 1 me basic info (`Roll_No`, `Student_Name`, `Father_Name`, `DOB`, `Aadhaar_No`, `Mobile_No`) aur Sheet 2 me Marks rakhein.")
+        st.info("💡 Tip: Multi-sheet Excel support enabled! Sheet 1 me basic info (`Roll_No`, `Student_Name`, `Father_Name`, `DOB`, `Aadhaar_No`, `Mobile_No`) aur Sheet 2 me Marks (`Gujarati`, `Hindi`, `English`, `Mathematics`, `Science`, `Social_Science`, `Physics`, `Chemistry`, `Biology`) rakhein.")
         uploaded_file = st.file_uploader("Upload Excel Sheet (.xlsx)", type=["xlsx", "xls"])
         confirm_excel = st.checkbox("Are you sure to overwrite existing student data sheet?")
         
