@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import os
-import shutil
 import re
 import json
 import urllib.parse
@@ -21,7 +20,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 st.set_page_config(page_title="PM SHRI JNV CHHOTAUDEPUR - RESULT PORTAL", page_icon="🎓", layout="wide")
 
-# Custom CSS for UI Enhancement
+# Custom CSS
 st.markdown("""
     <style>
     @media (max-width: 768px) {
@@ -57,17 +56,15 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Directory Setup
-os.makedirs("photos/students", exist_ok=True)
-os.makedirs("photos/gallery", exist_ok=True)
-os.makedirs("photos/board", exist_ok=True)
-os.makedirs("photos/system", exist_ok=True)
-os.makedirs("backups", exist_ok=True)
+for folder in ["photos/students", "photos/gallery", "photos/board", "photos/system", "backups"]:
+    os.makedirs(folder, exist_ok=True)
 
-# Security: Fetch Admin Password from Secrets or Env Variable
+# Security & Credentials
 try:
     ADMIN_PASSWORD = st.secrets.get("ADMIN_PASSWORD", os.getenv("ADMIN_PASSWORD", "Jnvcu@me2"))
 except Exception:
     ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "Jnvcu@me2")
+
 DB_FILE = "school_database.db"
 EXCEL_FILE_PATH = "JNV_Student_Marks.xlsx"
 
@@ -76,7 +73,6 @@ ALL_SUBJECTS = [
     'Science', 'Social_Science', 'Physics', 'Chemistry', 'Biology'
 ]
 
-# 🌐 MODIFICATION 3: Multi-Language Dictionary Support
 LANG_TEXTS = {
     "English": {
         "title": "STUDENT PERFORMANCE & RESULT PORTAL",
@@ -96,7 +92,7 @@ LANG_TEXTS = {
         "overall_status": "कुल प्रदर्शन स्थिति",
         "pass": "उत्तीर्ण / उत्कृष्ट",
         "needs_imp": "सुधार की आवश्यकता है",
-        "chart_title": "विषय-वार अंक विश्लेषण graph"
+        "chart_title": "विषय-वार अंक विश्लेषण"
     },
     "Gujarati": {
         "title": "વિદ્યાર્થી પ્રદર્શન અને પરિણામ પોર્ટલ",
@@ -110,29 +106,13 @@ LANG_TEXTS = {
     }
 }
 
-# 🔒 MODIFICATION 1: Aadhaar Masking Function
 def mask_aadhaar(val):
-    clean_a = re.sub(r'[^0-9]', '', str(val))
-    if len(clean_a) >= 4:
-        return f"XXXX-XXXX-{clean_a[-4:]}"
-    return "XXXX-XXXX-XXXX"
+    return "[Aadhaar Redacted]"
 
 def clean_val(val):
     if pd.isna(val) or val is None:
         return ""
     return re.sub(r'[^a-zA-Z0-9]', '', str(val)).lower().strip()
-
-def get_rank_comment(rank):
-    if rank == 1:
-        return "🥇 Outstanding Performance! Class Rank #1. Keep it up! 🌟"
-    elif rank <= 3:
-        return "🥈 Excellent Performance! Top 3 in Class. Keep pushing! 💪"
-    elif rank <= 10:
-        return "🌟 Very Good Effort! Top 10 Performer. Work hard for Top 3!"
-    elif rank <= 20:
-        return "👍 Good Effort! Consistent practice will boost your rank."
-    else:
-        return "💪 Scope for Improvement! Focus on weaker subjects."
 
 @st.cache_data
 def get_base64_image(image_path):
@@ -167,7 +147,7 @@ def get_and_increment_visits():
     with open(counter_file, "r+") as f:
         try:
             count = int(f.read().strip())
-        except:
+        except Exception:
             count = 0
         count += 1
         f.seek(0)
@@ -177,7 +157,7 @@ def get_and_increment_visits():
 
 total_visits = get_and_increment_visits()
 
-# 🗄️ MODIFICATION 6: SQLite Database Integration
+# SQLite Database Functions
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
@@ -204,9 +184,32 @@ def sync_df_to_sqlite(df):
         cursor.execute('''
             INSERT INTO student_results (Class, Roll_No, Student_Name, Father_Name, DOB, Aadhaar_No, Mobile_No, Exam_Type, Max_Marks, Class_Teacher, Total_Marks, Percentage, Class_Rank, Subject_Data)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (str(row['Class']), str(row['Roll_No']), str(row['Student_Name']), str(row['Father_Name']), str(row['DOB']), str(row['Aadhaar_No']), str(row['Mobile_No']), str(row['Exam_Type']), float(row['Max_Marks']), str(row['Class_Teacher']), float(row['Total_Marks']), float(row['Percentage']), int(row['Class_Rank']), sub_json))
+        ''', (str(row.get('Class', '')), str(row.get('Roll_No', '')), str(row.get('Student_Name', '')), str(row.get('Father_Name', '')), str(row.get('DOB', '')), str(row.get('Aadhaar_No', '')), str(row.get('Mobile_No', '')), str(row.get('Exam_Type', '')), float(row.get('Max_Marks', 600)), str(row.get('Class_Teacher', '')), float(row.get('Total_Marks', 0)), float(row.get('Percentage', 0)), int(row.get('Class_Rank', 0)), sub_json))
     conn.commit()
     conn.close()
+
+def load_sqlite_to_df():
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT Class, Roll_No, Student_Name, Father_Name, DOB, Aadhaar_No, Mobile_No, Exam_Type, Max_Marks, Class_Teacher, Total_Marks, Percentage, Class_Rank, Subject_Data FROM student_results")
+    rows = cursor.fetchall()
+    conn.close()
+    if not rows:
+        return None
+    
+    records = []
+    for r in rows:
+        rec = {
+            'Class': r[0], 'Roll_No': r[1], 'Student_Name': r[2], 'Father_Name': r[3],
+            'DOB': r[4], 'Aadhaar_No': r[5], 'Mobile_No': r[6], 'Exam_Type': r[7],
+            'Max_Marks': r[8], 'Class_Teacher': r[9], 'Total_Marks': r[10],
+            'Percentage': r[11], 'Class_Rank': r[12]
+        }
+        sub_dict = json.loads(r[13]) if r[13] else {}
+        for sub in ALL_SUBJECTS:
+            rec[sub] = sub_dict.get(sub, np.nan)
+        records.append(rec)
+    return pd.DataFrame(records)
 
 def log_parent_search(roll_no, student_name, selected_class):
     log_file = "result_logs.csv"
@@ -252,14 +255,16 @@ def process_data_excel(excel_file_source):
     sync_df_to_sqlite(df)
     return df
 
+# Initialize Data
 if "student_data" not in st.session_state or st.session_state["student_data"] is None:
     if os.path.exists(EXCEL_FILE_PATH):
         try:
             st.session_state["student_data"] = process_data_excel(EXCEL_FILE_PATH)
         except Exception as e:
             st.error(f"Excel read error: {e}")
+            st.session_state["student_data"] = load_sqlite_to_df()
     else:
-        st.session_state["student_data"] = None
+        st.session_state["student_data"] = load_sqlite_to_df()
 
 if "admin_logged_in" not in st.session_state:
     st.session_state["admin_logged_in"] = False
@@ -271,7 +276,6 @@ def load_board_toppers():
             return json.load(f)
     return []
 
-# 🏆 MODIFICATION 5: Auto Merit Certificate PDF Generator
 def generate_merit_certificate_pdf(student_info, exam_type, percentage, rank):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), rightMargin=20, leftMargin=20, topMargin=20, bottomMargin=20)
@@ -324,11 +328,10 @@ def generate_pdf_scorecard(student_info, filtered_df):
     story.append(Paragraph("STUDENT ACADEMIC PERFORMANCE REPORT CARD", subtitle_style))
     story.append(Spacer(1, 15))
 
-    masked_a = mask_aadhaar(student_info['Aadhaar_No'])
     info_data = [
         [Paragraph(f"<b>Student Name:</b> {student_info['Student_Name']}", normal_style), Paragraph(f"<b>Roll No:</b> {student_info['Roll_No']}", normal_style)],
         [Paragraph(f"<b>Class:</b> {student_info['Class']}", normal_style), Paragraph(f"<b>Class Teacher:</b> {student_info['Class_Teacher']}", normal_style)],
-        [Paragraph(f"<b>Father's Name:</b> {student_info['Father_Name']}", normal_style), Paragraph(f"<b>Aadhaar:</b> {masked_a}", normal_style)]
+        [Paragraph(f"<b>Father's Name:</b> {student_info['Father_Name']}", normal_style), Paragraph(f"<b>Aadhaar:</b> [Aadhaar Redacted]", normal_style)]
     ]
     info_table = Table(info_data, colWidths=[260, 260])
     info_table.setStyle(TableStyle([
@@ -369,20 +372,20 @@ def generate_pdf_scorecard(student_info, filtered_df):
     buffer.seek(0)
     return buffer.getvalue()
 
-@st.dialog("⚠️ CONFIRMATION / क्या आप आश्वस्त हैं?")
-def confirm_action_dialog(title, callback, *args, **kwargs):
+@st.dialog("⚠️ CONFIRMATION / पुष्टि करें")
+def confirm_action_dialog(title, message, callback_action):
     st.write(f"**{title}**")
-    st.write("Do you really want to perform this update?")
+    st.write(message)
     c1, c2 = st.columns(2)
     with c1:
         if st.button("✅ Yes, Proceed", use_container_width=True):
-            callback(*args, **kwargs)
+            callback_action()
             st.rerun()
     with c2:
-        if st.button("❌ No, Cancel", use_container_width=True):
+        if st.button("❌ Cancel", use_container_width=True):
             st.rerun()
 
-# 🌐 Sidebar Navigation & Language Switcher
+# Sidebar Navigation & Language Switcher
 st.sidebar.title("☰ NAVIGATION")
 selected_lang = st.sidebar.selectbox("🌐 Choose Language / भाषा चुनें:", ["English", "Hindi", "Gujarati"])
 txt = LANG_TEXTS[selected_lang]
@@ -503,7 +506,7 @@ if menu == "👨‍🎓 PARENT PORTAL":
                     with b_c1:
                         st.download_button("📥 Download Report Card (PDF)", data=pdf_bytes, file_name=f"Report_{student_info['Roll_No']}.pdf", mime="application/pdf", use_container_width=True)
                     
-                    # 🏆 Merit Certificate Download for Top 3 Rankers
+                    # Merit Certificate Download for Top 3 Rankers
                     best_row = filtered_df.sort_values('Class_Rank').iloc[0]
                     if best_row['Class_Rank'] <= 3:
                         with b_c2:
@@ -512,15 +515,21 @@ if menu == "👨‍🎓 PARENT PORTAL":
 
                 st.markdown("---")
                 
-                # 📊 MODIFICATION 2: Visual Plotly Analytics & Weak Subject Alert
+                # Visual Analytics: Student Score vs Class Average
                 st.subheader(f"📊 {txt['chart_title']}")
                 latest_row = filtered_df.iloc[-1]
                 sub_names = [s for s in ALL_SUBJECTS if s in latest_row and pd.notna(latest_row[s])]
                 sub_marks = [latest_row[s] for s in sub_names]
                 
-                # Plotly Chart
-                fig = go.Figure(data=[go.Bar(x=sub_names, y=sub_marks, marker_color='#1E88E5', text=sub_marks, textposition='auto')])
-                fig.update_layout(title=f"Marks Distribution ({latest_row['Exam_Type']})", xaxis_title="Subjects", yaxis_title="Marks", yaxis=dict(range=[0, 100]))
+                # Class Average Calculation
+                class_df = df[(df['Class'].astype(str) == str(latest_row['Class'])) & (df['Exam_Type'] == latest_row['Exam_Type'])]
+                class_avgs = [class_df[s].mean() for s in sub_names]
+
+                fig = go.Figure()
+                fig.add_trace(go.Bar(x=sub_names, y=sub_marks, name="Student Score", marker_color='#1E88E5', text=sub_marks, textposition='auto'))
+                fig.add_trace(go.Bar(x=sub_names, y=class_avgs, name="Class Average", marker_color='#FFA726', text=[f"{v:.1f}" for v in class_avgs], textposition='auto'))
+                
+                fig.update_layout(barmode='group', title=f"Marks Comparison vs Class Average ({latest_row['Exam_Type']})", xaxis_title="Subjects", yaxis_title="Marks", yaxis=dict(range=[0, 100]))
                 st.plotly_chart(fig, use_container_width=True)
 
                 # Weak Subject Red Alert Badge
@@ -574,7 +583,7 @@ elif menu == "🏆 BOARD EXAM RESULTS":
         st.markdown(f'<marquee direction="left" scrollamount="6" onmouseover="this.stop();" onmouseout="this.start();">{cards_html}</marquee>', unsafe_allow_html=True)
 
 # ==============================================================================
-# ⚙️ ADMIN PORTAL (🔒 Security & 📲 Bulk WhatsApp Alerts)
+# ⚙️ ADMIN PORTAL
 # ==============================================================================
 elif menu == "⚙️ ADMIN PORTAL":
     st.header("🔒 ADMIN DASHBOARD")
@@ -600,8 +609,27 @@ elif menu == "⚙️ ADMIN PORTAL":
 
         st.markdown("---")
 
-        # 📲 MODIFICATION 4: Bulk WhatsApp Notification Links Generator
-        with st.expander("📲 1. BULK WHATSAPP NOTIFICATIONS", expanded=False):
+        # Live Data Editor
+        with st.expander("✏️ 1. EDIT STUDENT DATA & MARKS IN REALTIME", expanded=False):
+            if st.session_state["student_data"] is not None:
+                edited_df = st.data_editor(st.session_state["student_data"], num_rows="dynamic", use_container_width=True)
+                
+                if st.button("💾 Save Edits to SQLite Database"):
+                    for sub in ALL_SUBJECTS:
+                        if sub in edited_df.columns:
+                            edited_df[sub] = pd.to_numeric(edited_df[sub], errors='coerce')
+                    edited_df['Total_Marks'] = edited_df[ALL_SUBJECTS].sum(axis=1, skipna=True)
+                    edited_df['Percentage'] = ((edited_df['Total_Marks'] / edited_df['Max_Marks']) * 100).round(2)
+                    edited_df['Class_Rank'] = edited_df.groupby(['Class', 'Exam_Type'])['Total_Marks'].rank(ascending=False, method='min').fillna(0).astype(int)
+                    
+                    st.session_state["student_data"] = edited_df
+                    sync_df_to_sqlite(edited_df)
+                    st.success("✅ Database updated successfully!")
+            else:
+                st.info("No data available to edit.")
+
+        # WhatsApp Link Generator
+        with st.expander("📲 2. BULK WHATSAPP NOTIFICATIONS", expanded=False):
             if st.session_state["student_data"] is not None:
                 df_notif = st.session_state["student_data"]
                 if 'Mobile_No' in df_notif.columns:
@@ -614,21 +642,22 @@ elif menu == "⚙️ ADMIN PORTAL":
                             mob = re.sub(r'[^0-9]', '', str(row['Mobile_No']))
                             if len(mob) >= 10:
                                 mob = "91" + mob[-10:]
-                                encoded_msg = urllib.parse.quote(f"Hello {row['Student_Name']},\n{msg_template}")
+                                msg_body = f"Hello {row['Student_Name']},\n\n{msg_template}\nTotal Score: {row['Total_Marks']} ({row['Percentage']}%)"
+                                encoded_msg = urllib.parse.quote(msg_body)
                                 wa_link = f"https://api.whatsapp.com/send?phone={mob}&text={encoded_msg}"
                                 st.markdown(f"👉 **{row['Student_Name']}** -> [Click to Send WhatsApp Alert]({wa_link})")
                 else:
                     st.error("Mobile_No column missing in data.")
 
-        # Media & Background Settings
-        with st.expander("🎨 2. BRANDING & BACKGROUND", expanded=False):
+        # Media & Branding
+        with st.expander("🎨 3. BRANDING & BACKGROUND", expanded=False):
             up_logo = st.file_uploader("Upload Logo", type=["png", "jpg"])
             if st.button("Save Logo") and up_logo:
                 Image.open(up_logo).save(LOGO_PATH)
                 st.success("Logo Updated!")
 
         # Board Toppers Management
-        with st.expander("🏆 3. BOARD TOPPERS MANAGEMENT", expanded=False):
+        with st.expander("🏆 4. BOARD TOPPERS MANAGEMENT", expanded=False):
             b_class = st.selectbox("Class", ["Class 10", "Class 12"])
             b_name = st.text_input("Name")
             b_percent = st.text_input("Percentage (e.g. 98.4%)")
@@ -643,8 +672,8 @@ elif menu == "⚙️ ADMIN PORTAL":
                     json.dump(toppers, f)
                 st.success("Topper Added!")
 
-        # Excel Upload with SQLite Sync
-        with st.expander("📤 4. EXCEL DATA UPLOAD & SQLITE SYNC", expanded=False):
+        # Excel Upload & Database Sync
+        with st.expander("📤 5. EXCEL DATA UPLOAD & SQLITE SYNC", expanded=False):
             uploaded_file = st.file_uploader("Upload Excel Sheet (.xlsx)", type=["xlsx", "xls"])
             if st.button("Process & Sync Database") and uploaded_file:
                 with open(EXCEL_FILE_PATH, "wb") as f:
