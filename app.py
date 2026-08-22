@@ -8,11 +8,13 @@ import urllib.parse
 import io
 import base64
 import sqlite3
+import random
+import zipfile
 from datetime import datetime
 from PIL import Image
 import plotly.graph_objects as go
 
-# ReportLab Imports for PDF, Watermark & Certificate Generation
+# ReportLab Imports for PDF, Watermark, Signatures & Certificate Generation
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage
@@ -20,17 +22,20 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 st.set_page_config(page_title="PM SHRI JNV CHHOTAUDEPUR - RESULT PORTAL", page_icon="🎓", layout="wide")
 
-# Custom CSS for UI Enhancement and Centering Header
+# Custom CSS for UI Alignment
 st.markdown("""
     <style>
     @media (max-width: 768px) {
         .stApp { padding: 5px !important; }
-        h1 { font-size: 1.3rem !important; }
-        h3 { font-size: 1.0rem !important; }
+        h1 { font-size: 1.2rem !important; }
+        h3 { font-size: 0.9rem !important; }
         .stButton>button { width: 100% !important; }
     }
-    .header-container {
-        text-align: center;
+    .header-box {
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 15px;
         margin-bottom: 15px;
     }
     .main-title {
@@ -39,16 +44,16 @@ st.markdown("""
         color: #1E88E5;
         margin: 0 !important;
         padding: 0 !important;
-        text-align: center;
+        font-size: 1.6rem;
     }
     .sub-title {
         text-transform: uppercase;
-        letter-spacing: 1.5px;
+        letter-spacing: 1px;
         color: #2E7D32;
         font-weight: 700;
-        margin-top: 4px !important;
+        margin-top: 2px !important;
         padding: 0 !important;
-        text-align: center;
+        font-size: 1.1rem;
     }
     .weak-badge {
         background-color: #FFEBEE;
@@ -59,19 +64,18 @@ st.markdown("""
         font-weight: bold;
         margin: 10px 0;
     }
-    .combined-box {
-        background: linear-gradient(135deg, #E3F2FD, #E8F5E9);
-        border: 2px solid #1E88E5;
-        border-radius: 8px;
-        padding: 15px;
-        margin-bottom: 15px;
-    }
     </style>
 """, unsafe_allow_html=True)
 
 # Directory Setup
 for folder in ["photos/students", "photos/gallery", "photos/board", "photos/system", "backups"]:
     os.makedirs(folder, exist_ok=True)
+
+# System Image Paths
+BG_PATH = "photos/system/background.png"
+LOGO_PATH = "photos/system/logo.png"
+SEAL_PATH = "photos/system/seal.png"
+SIGN_PATH = "photos/system/signature.png"
 
 # Credentials & Database Configuration
 try:
@@ -93,33 +97,27 @@ LANG_TEXTS = {
         "search_lbl": "🔎 CHECK STUDENT RESULT",
         "cert_btn": "🏆 Download Merit Certificate",
         "weak_alert": "⚠️ Needs Special Attention in the following subjects (< 33%):",
-        "overall_status": "Overall Performance Status",
-        "pass": "PASS / EXCELLENT",
-        "needs_imp": "NEEDS IMPROVEMENT",
         "chart_title": "Subject-wise Performance Breakdown",
-        "combined_title": "🌟 COMBINED OVERALL PERFORMANCE ACROSS ALL EXAMS"
+        "combined_title": "🌟 COMBINED OVERALL PERFORMANCE ACROSS ALL EXAMS",
+        "trend_title": "📈 Multi-Exam Performance Trend Line"
     },
     "Hindi": {
         "title": "विद्यार्थी प्रदर्शन एवं परिणाम पोर्टल",
         "search_lbl": "🔎 छात्र परिणाम खोजें",
         "cert_btn": "🏆 योग्यता प्रमाण पत्र (Merit Certificate) डाउनलोड करें",
         "weak_alert": "⚠️ निम्नलिखित विषयों में विशेष ध्यान देने की आवश्यकता है (< 33%):",
-        "overall_status": "कुल प्रदर्शन स्थिति",
-        "pass": "उत्तीर्ण / उत्कृष्ट",
-        "needs_imp": "सुधार की आवश्यकता है",
         "chart_title": "विषय-वार अंक विश्लेषण",
-        "combined_title": "🌟 सभी परीक्षाओं का संयुक्त प्रदर्शन (Combined Performance)"
+        "combined_title": "🌟 सभी परीक्षाओं का संयुक्त प्रदर्शन (Combined Performance)",
+        "trend_title": "📈 मल्टी-एग्जाम प्रोग्रेस ट्रेंड ग्राफ"
     },
     "Gujarati": {
         "title": "વિદ્યાર્થી પ્રદર્શન અને પરિણામ પોર્ટલ",
         "search_lbl": "🔎 વિદ્યાર્થીનું પરિણામ જુઓ",
         "cert_btn": "🏆 મેરિટ સર્ટિફિકેટ ડાઉનલોડ કરો",
         "weak_alert": "⚠️ નીચેના વિષયોમાં વિશેષ ધ્યાન આપવાની જરૂર છે (< 33%):",
-        "overall_status": "સમગ્ર પ્રદર્શન સ્થિતિ",
-        "pass": "ઉત્તીર્ણ / ઉત્કૃષ્ટ",
-        "needs_imp": "સુધારાની જરૂર છે",
         "chart_title": "વિષયવાર ગુણ વિશ્લેષણ ગ્રાફ",
-        "combined_title": "🌟 તમામ પરીક્ષાઓનું સંયુક્ત પ્રદર્શન (Combined Performance)"
+        "combined_title": "🌟 તમામ પરીક્ષાઓનું સંયુક્ત પ્રદર્શન (Combined Performance)",
+        "trend_title": "📈 મલ્ટિ-પરીક્ષા પ્રગતિ ગ્રાફ"
     }
 }
 
@@ -138,16 +136,14 @@ def get_base64_image(image_path):
             return base64.b64encode(image_file.read()).decode()
     return None
 
-BG_PATH = "photos/system/background.png"
-LOGO_PATH = "photos/system/logo.png"
-
-encoded_string = get_base64_image(BG_PATH)
-if encoded_string:
+# Set Dynamic Background
+encoded_bg = get_base64_image(BG_PATH)
+if encoded_bg:
     st.markdown(
         f"""
         <style>
         .stApp {{
-            background-image: linear-gradient(rgba(255, 255, 255, 0.90), rgba(255, 255, 255, 0.90)), url("data:image/png;base64,{encoded_string}");
+            background-image: linear-gradient(rgba(255, 255, 255, 0.90), rgba(255, 255, 255, 0.90)), url("data:image/png;base64,{encoded_bg}");
             background-size: cover;
             background-attachment: fixed;
         }}
@@ -174,7 +170,7 @@ def get_and_increment_visits():
 
 total_visits = get_and_increment_visits()
 
-# SQLite Database Helper Functions
+# Database Setup & SQLite Handlers
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
@@ -292,11 +288,11 @@ def load_board_toppers():
             return json.load(f)
     return []
 
-# Helper Function for Watermark Canvas in ReportLab PDFs
+# Helper Function for Watermark Canvas in PDF
 def create_watermark_callback(watermark_text):
     def watermark(canvas, doc):
         canvas.saveState()
-        canvas.setFont('Helvetica-Bold', 40)
+        canvas.setFont('Helvetica-Bold', 36)
         canvas.setFillColor(colors.HexColor('#E0E0E0'), alpha=0.25)
         canvas.translate(doc.pagesize[0] / 2.0, doc.pagesize[1] / 2.0)
         canvas.rotate(35)
@@ -304,31 +300,30 @@ def create_watermark_callback(watermark_text):
         canvas.restoreState()
     return watermark
 
-# 📄 Natural A4 Merit Certificate Generator (with Logo & Watermark)
+# 📄 Merit Certificate PDF Generator with Seal & Signature
 def generate_merit_certificate_pdf(student_info, exam_type, percentage, rank):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
     story = []
     styles = getSampleStyleSheet()
 
-    cert_title = ParagraphStyle('CertTitle', parent=styles['Heading1'], fontName='Helvetica-Bold', fontSize=24, leading=28, alignment=1, textColor=colors.HexColor('#1565C0'))
-    sub_title = ParagraphStyle('SubTitle', parent=styles['Heading2'], fontName='Helvetica-Bold', fontSize=16, leading=20, alignment=1, textColor=colors.HexColor('#2E7D32'))
+    cert_title = ParagraphStyle('CertTitle', parent=styles['Heading1'], fontName='Helvetica-Bold', fontSize=22, leading=26, alignment=1, textColor=colors.HexColor('#1565C0'))
+    sub_title = ParagraphStyle('SubTitle', parent=styles['Heading2'], fontName='Helvetica-Bold', fontSize=15, leading=18, alignment=1, textColor=colors.HexColor('#2E7D32'))
     body_style = ParagraphStyle('Body', parent=styles['Normal'], fontName='Helvetica', fontSize=13, leading=22, alignment=1)
 
-    # Logo inclusion if exists
     if os.path.exists(LOGO_PATH):
         try:
-            logo_img = RLImage(LOGO_PATH, width=65, height=65)
+            logo_img = RLImage(LOGO_PATH, width=60, height=60)
             logo_img.hAlign = 'CENTER'
             story.append(logo_img)
-            story.append(Spacer(1, 8))
+            story.append(Spacer(1, 6))
         except Exception:
             pass
 
     story.append(Paragraph("PM SHRI JAWAHAR NAVODAYA VIDYALAYA CHHOTAUDEPUR", cert_title))
-    story.append(Spacer(1, 6))
+    story.append(Spacer(1, 5))
     story.append(Paragraph("🏆 CERTIFICATE OF ACADEMIC EXCELLENCE 🏆", sub_title))
-    story.append(Spacer(1, 20))
+    story.append(Spacer(1, 15))
 
     cert_text = f"""
     This is to proudly certify that <b>{student_info['Student_Name']}</b>, Son/Daughter of <b>{student_info['Father_Name']}</b>, 
@@ -337,14 +332,18 @@ def generate_merit_certificate_pdf(student_info, exam_type, percentage, rank):
     in the <b>{exam_type}</b> Examination (Academic Year 2025-26).
     """
     story.append(Paragraph(cert_text, body_style))
-    story.append(Spacer(1, 35))
+    story.append(Spacer(1, 25))
+
+    # 🌟 Digital Seal & Signature Inclusion
+    seal_element = RLImage(SEAL_PATH, width=50, height=50) if os.path.exists(SEAL_PATH) else Paragraph("<b>[OFFICIAL SEAL]</b>", body_style)
+    sign_element = RLImage(SIGN_PATH, width=70, height=35) if os.path.exists(SIGN_PATH) else Paragraph("<b>____________________</b>", body_style)
 
     sig_data = [
-        [Paragraph("<b>____________________</b>", body_style), Paragraph("<b>____________________</b>", body_style)],
-        [Paragraph("<b>Class Teacher</b>", body_style), Paragraph("<b>Principal Signature</b>", body_style)]
+        [Paragraph("<b>____________________</b>", body_style), seal_element, sign_element],
+        [Paragraph("<b>Class Teacher</b>", body_style), Paragraph("<b>School Seal</b>", body_style), Paragraph("<b>Principal Signature</b>", body_style)]
     ]
-    sig_table = Table(sig_data, colWidths=[350, 350])
-    sig_table.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER')]))
+    sig_table = Table(sig_data, colWidths=[250, 200, 250])
+    sig_table.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
     story.append(sig_table)
 
     watermark_fn = create_watermark_callback("PM SHRI JNV CHHOTAUDEPUR")
@@ -352,7 +351,7 @@ def generate_merit_certificate_pdf(student_info, exam_type, percentage, rank):
     buffer.seek(0)
     return buffer.getvalue()
 
-# 📄 PDF Scorecard Generator (with Logo & Watermark)
+# 📄 Scorecard PDF Generator with Digital Seal & Signature
 def generate_pdf_scorecard(student_info, filtered_df):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
@@ -365,17 +364,17 @@ def generate_pdf_scorecard(student_info, filtered_df):
 
     if os.path.exists(LOGO_PATH):
         try:
-            logo_img = RLImage(LOGO_PATH, width=50, height=50)
+            logo_img = RLImage(LOGO_PATH, width=45, height=45)
             logo_img.hAlign = 'CENTER'
             story.append(logo_img)
-            story.append(Spacer(1, 5))
+            story.append(Spacer(1, 4))
         except Exception:
             pass
 
     story.append(Paragraph("PM SHRI JAWAHAR NAVODAYA VIDYALAYA CHHOTAUDEPUR", title_style))
     story.append(Spacer(1, 4))
     story.append(Paragraph("STUDENT ACADEMIC PERFORMANCE REPORT CARD", subtitle_style))
-    story.append(Spacer(1, 12))
+    story.append(Spacer(1, 10))
 
     info_data = [
         [Paragraph(f"<b>Student Name:</b> {student_info['Student_Name']}", normal_style), Paragraph(f"<b>Roll No:</b> {student_info['Roll_No']}", normal_style)],
@@ -385,17 +384,17 @@ def generate_pdf_scorecard(student_info, filtered_df):
     info_table = Table(info_data, colWidths=[260, 260])
     info_table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F8F9FA')),
-        ('PADDING', (0, 0), (-1, -1), 6),
+        ('PADDING', (0, 0), (-1, -1), 5),
         ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#E0E0E0')),
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
     ]))
     story.append(info_table)
-    story.append(Spacer(1, 15))
+    story.append(Spacer(1, 12))
 
     for _, row in filtered_df.iterrows():
         exam_header = f"<b>Exam:</b> {row['Exam_Type']} &nbsp;|&nbsp; <b>Score:</b> {int(row['Total_Marks'])}/{int(row['Max_Marks'])} ({row['Percentage']:.2f}%) &nbsp;|&nbsp; <b>Rank:</b> #{row['Class_Rank']}"
         story.append(Paragraph(exam_header, styles['Heading3']))
-        story.append(Spacer(1, 5))
+        story.append(Spacer(1, 4))
 
         table_data = [["S.No.", "Subject Name", "Marks Obtained"]]
         active_subs = [s for s in ALL_SUBJECTS if s in row and pd.notna(row[s])]
@@ -410,32 +409,46 @@ def generate_pdf_scorecard(student_info, filtered_df):
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#CCCCCC')),
-            ('PADDING', (0, 0), (-1, -1), 5),
+            ('PADDING', (0, 0), (-1, -1), 4),
             ('ALIGN', (0, 0), (0, -1), 'CENTER'),
             ('ALIGN', (2, 0), (2, -1), 'CENTER'),
         ]))
         story.append(score_table)
-        story.append(Spacer(1, 12))
+        story.append(Spacer(1, 10))
+
+    # 🌟 Digital Signatures Footer Table
+    seal_element = RLImage(SEAL_PATH, width=45, height=45) if os.path.exists(SEAL_PATH) else Paragraph("<b>[SEAL]</b>", normal_style)
+    sign_element = RLImage(SIGN_PATH, width=65, height=30) if os.path.exists(SIGN_PATH) else Paragraph("<b>________________</b>", normal_style)
+
+    sig_data = [
+        [Paragraph("<b>____________________</b>", normal_style), seal_element, sign_element],
+        [Paragraph("<b>Class Teacher Sign</b>", normal_style), Paragraph("<b>School Seal</b>", normal_style), Paragraph("<b>Principal Signature</b>", normal_style)]
+    ]
+    sig_table = Table(sig_data, colWidths=[180, 160, 180])
+    sig_table.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
+    story.append(Spacer(1, 15))
+    story.append(sig_table)
 
     watermark_fn = create_watermark_callback("PM SHRI JNV CHHOTAUDEPUR")
     doc.build(story, onFirstPage=watermark_fn, onLaterPages=watermark_fn)
     buffer.seek(0)
     return buffer.getvalue()
 
-# Sidebar Navigation & Language Switcher
+# Sidebar Navigation
 st.sidebar.title("☰ NAVIGATION")
 selected_lang = st.sidebar.selectbox("🌐 Choose Language / भाषा चुनें:", ["English", "Hindi", "Gujarati"])
 txt = LANG_TEXTS[selected_lang]
 
 menu = st.sidebar.radio("SELECT PORTAL / PAGE:", ["👨‍🎓 PARENT PORTAL", "🖼️ SCHOOL GALLERY", "🏆 BOARD EXAM RESULTS", "⚙️ ADMIN PORTAL"])
 
-# Centered Header UI
-head_c1, head_c2, head_c3 = st.columns([1, 4, 1], vertical_alignment="center")
-with head_c2:
+# 🌟 MODIFICATION 6: Left Aligned Logo & Header Title (Side-by-Side)
+h_col1, h_col2 = st.columns([1, 6], vertical_alignment="center")
+with h_col1:
     if os.path.exists(LOGO_PATH):
-        st.markdown(f"<div style='text-align: center;'><img src='data:image/png;base64,{get_base64_image(LOGO_PATH)}' width='90'></div>", unsafe_allow_html=True)
-    st.markdown("<h1 class='main-title'>🏫 PM SHRI JAWAHAR NAVODAYA VIDYALAYA CHHOTAUDEPUR</h1>", unsafe_allow_html=True)
-    st.markdown(f"<h3 class='sub-title'>{txt['title']}</h3>", unsafe_allow_html=True)
+        st.image(LOGO_PATH, width=80)
+with h_col2:
+    st.markdown("<h2 class='main-title'>PM SHRI JAWAHAR NAVODAYA VIDYALAYA CHHOTAUDEPUR</h2>", unsafe_allow_html=True)
+    st.markdown(f"<h4 class='sub-title'>{txt['title']}</h4>", unsafe_allow_html=True)
 
 st.markdown("---")
 
@@ -448,12 +461,10 @@ if menu == "👨‍🎓 PARENT PORTAL":
         "🌟 'Live as if you were to die tomorrow. Learn as if you were to live forever.' – Mahatma Gandhi",
         "💡 'The mind is not a vessel to be filled, but a fire to be kindled.' – Plutarch"
     ]
-    quotes_ticker_text = " &nbsp;&nbsp;&nbsp;&nbsp; ✦ &nbsp;&nbsp;&nbsp;&nbsp; ".join(educational_quotes)
-
     st.markdown(
         f"""
         <div style="background: linear-gradient(90deg, #1565C0, #1E88E5); border-radius: 6px; padding: 8px 12px; color: #FFFFFF; font-size: 14px; font-weight: 600; margin-bottom: 15px;">
-            <marquee direction="left" scrollamount="6" behavior="scroll">{quotes_ticker_text}</marquee>
+            <marquee direction="left" scrollamount="6" behavior="scroll">{" &nbsp;&nbsp;&nbsp;&nbsp; ✦ &nbsp;&nbsp;&nbsp;&nbsp; ".join(educational_quotes)}</marquee>
         </div>
         """,
         unsafe_allow_html=True
@@ -486,127 +497,175 @@ if menu == "👨‍🎓 PARENT PORTAL":
         st.warning("⚠️ Data file not found. Kripya Admin Portal se Data Upload karein.")
     else:
         df = st.session_state["student_data"]
-        search_method = st.radio("Choose Search Method:", ["Option 1: Roll No & Date of Birth (DOB)", "Option 2: Roll No & Aadhaar Number"], horizontal=True)
+        # 🌟 MODIFICATION 4: OTP Based Parent Login Option Included
+        search_method = st.radio("Choose Verification Method:", [
+            "Option 1: Roll No & Date of Birth (DOB)", 
+            "Option 2: Roll No & Aadhaar Number", 
+            "Option 3: OTP Based Mobile Verification (SMS/WhatsApp)"
+        ], horizontal=True)
         
-        with st.form("search_form"):
-            c1, c2 = st.columns(2)
+        filtered_df = pd.DataFrame()
+        
+        if "Option 3" in search_method:
+            c1, c2, c3 = st.columns([2, 2, 1])
             with c1:
-                selected_class = st.selectbox("Select Class", sorted(df['Class'].astype(str).unique()))
-                roll_no = st.text_input("Roll No")
-            
-            if "Option 1" in search_method:
-                with c2:
-                    dob_input = st.text_input("Date of Birth")
-            else:
-                with c2:
-                    aadhaar_input = st.text_input("Aadhaar Number")
-            
-            submit_btn = st.form_submit_button("🔍 View Result")
-
-        if submit_btn:
-            if "Option 1" in search_method:
-                filtered_df = df[
-                    (df['Class'].astype(str).str.strip().str.lower() == selected_class.strip().lower()) &
-                    (df['Roll_No'].astype(str).str.strip() == roll_no.strip()) &
-                    (df['DOB'].apply(clean_val) == clean_val(dob_input))
-                ]
-            else:
-                filtered_df = df[
-                    (df['Class'].astype(str).str.strip().str.lower() == selected_class.strip().lower()) &
-                    (df['Roll_No'].astype(str).str.strip() == roll_no.strip()) &
-                    (df['Aadhaar_No'].apply(clean_val) == clean_val(aadhaar_input))
-                ]
-            
-            if filtered_df.empty:
-                st.error("❌ Invalid Details! Kripya Roll No, DOB ya Aadhaar Sahi enter karein.")
-            else:
-                student_info = filtered_df.iloc[0]
-                log_parent_search(student_info['Roll_No'], student_info['Student_Name'], student_info['Class'])
-                
-                pdf_bytes = generate_pdf_scorecard(student_info, filtered_df)
-
-                st.success(f"🎓 Result Found for: **{student_info['Student_Name']}**")
-                
-                r_col1, r_col2 = st.columns([1, 4])
-                with r_col1:
-                    photo_file = f"photos/students/{student_info['Roll_No']}.png"
-                    if os.path.exists(photo_file):
-                        st.image(photo_file, width=130)
+                selected_class = st.selectbox("Select Class", sorted(df['Class'].astype(str).unique()), key="otp_cls")
+                roll_no = st.text_input("Roll No", key="otp_roll")
+            with c2:
+                mobile_input = st.text_input("Registered Mobile No", key="otp_mob")
+            with c3:
+                st.write(" ")
+                st.write(" ")
+                if st.button("📲 Send OTP"):
+                    if roll_no and mobile_input:
+                        gen_otp = str(random.randint(1000, 9999))
+                        st.session_state["current_otp"] = gen_otp
+                        st.info(f"🔑 [DEMO OTP]: Your OTP for Verification is **{gen_otp}**")
                     else:
-                        st.info("📷 No Photo")
+                        st.error("Enter Details first!")
+            
+            user_otp = st.text_input("Enter 4-Digit OTP Received", key="entered_otp")
+            if st.button("🔍 Verify & View Result"):
+                if "current_otp" in st.session_state and user_otp == st.session_state["current_otp"]:
+                    filtered_df = df[
+                        (df['Class'].astype(str).str.strip().str.lower() == selected_class.strip().lower()) &
+                        (df['Roll_No'].astype(str).str.strip() == roll_no.strip()) &
+                        (df['Mobile_No'].apply(clean_val) == clean_val(mobile_input))
+                    ]
+                else:
+                    st.error("❌ Incorrect OTP entered!")
+        else:
+            with st.form("search_form"):
+                c1, c2 = st.columns(2)
+                with c1:
+                    selected_class = st.selectbox("Select Class", sorted(df['Class'].astype(str).unique()))
+                    roll_no = st.text_input("Roll No")
                 
-                with r_col2:
-                    st.write(f"**Student:** {student_info['Student_Name']} | **Roll No:** {student_info['Roll_No']}")
-                    st.write(f"**Class:** {student_info['Class']} | **Aadhaar:** {mask_aadhaar(student_info['Aadhaar_No'])}")
-                    
-                    b_c1, b_c2 = st.columns(2)
-                    with b_c1:
-                        st.download_button("📥 Download Report Card (PDF)", data=pdf_bytes, file_name=f"Report_{student_info['Roll_No']}.pdf", mime="application/pdf", use_container_width=True)
-                    
-                    best_row = filtered_df.sort_values('Class_Rank').iloc[0]
-                    if best_row['Class_Rank'] <= 3:
-                        with b_c2:
-                            cert_pdf = generate_merit_certificate_pdf(student_info, best_row['Exam_Type'], best_row['Percentage'], best_row['Class_Rank'])
-                            st.download_button(txt['cert_btn'], data=cert_pdf, file_name=f"Merit_Certificate_{student_info['Roll_No']}.pdf", mime="application/pdf", use_container_width=True)
-
-                st.markdown("---")
+                if "Option 1" in search_method:
+                    with c2:
+                        dob_input = st.text_input("Date of Birth")
+                else:
+                    with c2:
+                        aadhaar_input = st.text_input("Aadhaar Number")
                 
-                # 🌟 MODIFICATION 1: Combined Performance Performance Summary
-                st.subheader(txt['combined_title'])
-                tot_obtained = filtered_df['Total_Marks'].sum()
-                tot_max = filtered_df['Max_Marks'].sum()
-                overall_pct = (tot_obtained / tot_max * 100) if tot_max > 0 else 0.0
+                submit_btn = st.form_submit_button("🔍 View Result")
+
+            if submit_btn:
+                if "Option 1" in search_method:
+                    filtered_df = df[
+                        (df['Class'].astype(str).str.strip().str.lower() == selected_class.strip().lower()) &
+                        (df['Roll_No'].astype(str).str.strip() == roll_no.strip()) &
+                        (df['DOB'].apply(clean_val) == clean_val(dob_input))
+                    ]
+                else:
+                    filtered_df = df[
+                        (df['Class'].astype(str).str.strip().str.lower() == selected_class.strip().lower()) &
+                        (df['Roll_No'].astype(str).str.strip() == roll_no.strip()) &
+                        (df['Aadhaar_No'].apply(clean_val) == clean_val(aadhaar_input))
+                    ]
+            
+        if not filtered_df.empty:
+            student_info = filtered_df.iloc[0]
+            log_parent_search(student_info['Roll_No'], student_info['Student_Name'], student_info['Class'])
+            
+            pdf_bytes = generate_pdf_scorecard(student_info, filtered_df)
+
+            st.success(f"🎓 Result Found for: **{student_info['Student_Name']}**")
+            
+            r_col1, r_col2 = st.columns([1, 4])
+            with r_col1:
+                photo_file = f"photos/students/{student_info['Roll_No']}.png"
+                if os.path.exists(photo_file):
+                    st.image(photo_file, width=130)
+                else:
+                    st.info("📷 No Photo")
+            
+            with r_col2:
+                st.write(f"**Student:** {student_info['Student_Name']} | **Roll No:** {student_info['Roll_No']}")
+                st.write(f"**Class:** {student_info['Class']} | **Aadhaar:** {mask_aadhaar(student_info['Aadhaar_No'])}")
                 
-                m1, m2, m3, m4 = st.columns(4)
-                m1.metric("Exams Taken", len(filtered_df))
-                m2.metric("Total Marks Obtained", f"{int(tot_obtained)}")
-                m3.metric("Combined Maximum Marks", f"{int(tot_max)}")
-                m4.metric("Overall Percentage", f"{overall_pct:.2f}%")
-
-                comb_data = []
-                for idx, r in filtered_df.iterrows():
-                    comb_data.append({
-                        "Exam Name": r['Exam_Type'],
-                        "Marks Obtained": f"{int(r['Total_Marks'])} / {int(r['Max_Marks'])}",
-                        "Percentage": f"{r['Percentage']:.2f}%",
-                        "Class Rank": f"#{r['Class_Rank']}"
-                    })
-                st.dataframe(pd.DataFrame(comb_data), hide_index=True, use_container_width=True)
-
-                st.markdown("---")
+                b_c1, b_c2 = st.columns(2)
+                with b_c1:
+                    st.download_button("📥 Download Report Card (PDF)", data=pdf_bytes, file_name=f"Report_{student_info['Roll_No']}.pdf", mime="application/pdf", use_container_width=True)
                 
-                # Visual Analytics Chart vs Class Average
-                st.subheader(f"📊 {txt['chart_title']}")
-                latest_row = filtered_df.iloc[-1]
-                sub_names = [s for s in ALL_SUBJECTS if s in latest_row and pd.notna(latest_row[s])]
-                sub_marks = [latest_row[s] for s in sub_names]
-                
-                class_df = df[(df['Class'].astype(str) == str(latest_row['Class'])) & (df['Exam_Type'] == latest_row['Exam_Type'])]
-                class_avgs = [class_df[s].mean() for s in sub_names]
+                best_row = filtered_df.sort_values('Class_Rank').iloc[0]
+                if best_row['Class_Rank'] <= 3:
+                    with b_c2:
+                        cert_pdf = generate_merit_certificate_pdf(student_info, best_row['Exam_Type'], best_row['Percentage'], best_row['Class_Rank'])
+                        st.download_button(txt['cert_btn'], data=cert_pdf, file_name=f"Merit_Certificate_{student_info['Roll_No']}.pdf", mime="application/pdf", use_container_width=True)
 
-                fig = go.Figure()
-                fig.add_trace(go.Bar(x=sub_names, y=sub_marks, name="Student Score", marker_color='#1E88E5', text=sub_marks, textposition='auto'))
-                fig.add_trace(go.Bar(x=sub_names, y=class_avgs, name="Class Average", marker_color='#FFA726', text=[f"{v:.1f}" for v in class_avgs], textposition='auto'))
-                
-                fig.update_layout(barmode='group', title=f"Marks Comparison vs Class Average ({latest_row['Exam_Type']})", xaxis_title="Subjects", yaxis_title="Marks", yaxis=dict(range=[0, 100]))
-                st.plotly_chart(fig, use_container_width=True)
+            st.markdown("---")
+            
+            # Combined Overall Performance Summary
+            st.subheader(txt['combined_title'])
+            tot_obtained = filtered_df['Total_Marks'].sum()
+            tot_max = filtered_df['Max_Marks'].sum()
+            overall_pct = (tot_obtained / tot_max * 100) if tot_max > 0 else 0.0
+            
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Exams Taken", len(filtered_df))
+            m2.metric("Total Marks Obtained", f"{int(tot_obtained)}")
+            m3.metric("Combined Maximum Marks", f"{int(tot_max)}")
+            m4.metric("Overall Percentage", f"{overall_pct:.2f}%")
 
-                weak_subs = [f"{s} ({latest_row[s]} marks)" for s in sub_names if float(latest_row[s]) < 33.0]
-                if weak_subs:
-                    st.markdown(f"<div class='weak-badge'>{txt['weak_alert']} {', '.join(weak_subs)}</div>", unsafe_allow_html=True)
+            # 🌟 MODIFICATION 5: Multi-Exam Progress Trend Line Graph
+            st.markdown("---")
+            st.subheader(txt['trend_title'])
+            
+            if len(filtered_df) > 0:
+                trend_fig = go.Figure()
+                trend_fig.add_trace(go.Scatter(
+                    x=filtered_df['Exam_Type'], 
+                    y=filtered_df['Percentage'],
+                    mode='lines+markers+text',
+                    name='Percentage',
+                    text=[f"{p:.1f}%" for p in filtered_df['Percentage']],
+                    textposition="top center",
+                    line=dict(color='#1E88E5', width=3),
+                    marker=dict(size=10, color='#1565C0')
+                ))
+                trend_fig.update_layout(
+                    title=f"Academic Progress Timeline for {student_info['Student_Name']}",
+                    xaxis_title="Examinations",
+                    yaxis_title="Percentage Score (%)",
+                    yaxis=dict(range=[0, 105]),
+                    margin=dict(l=20, r=20, t=40, b=20)
+                )
+                st.plotly_chart(trend_fig, use_container_width=True)
 
-                st.markdown("---")
-                st.subheader("📝 INDIVIDUAL EXAM SCORECARDS")
-                for index, row in filtered_df.iterrows():
-                    with st.expander(f"📌 **{row['Exam_Type']}** | Score: {int(row['Total_Marks'])}/{int(row['Max_Marks'])} ({row['Percentage']:.2f}%) | Rank: #{row['Class_Rank']}", expanded=True):
-                        subject_rows = []
-                        s_no = 1
-                        for sub_name in ALL_SUBJECTS:
-                            if pd.notna(row[sub_name]):
-                                val = row[sub_name]
-                                subject_rows.append({'S.No.': s_no, 'Subject Name': sub_name, 'Marks Obtained': int(val) if float(val).is_integer() else val})
-                                s_no += 1
-                        st.dataframe(pd.DataFrame(subject_rows), hide_index=True, use_container_width=True)
+            st.markdown("---")
+            # Subject-wise Comparison Chart
+            st.subheader(f"📊 {txt['chart_title']}")
+            latest_row = filtered_df.iloc[-1]
+            sub_names = [s for s in ALL_SUBJECTS if s in latest_row and pd.notna(latest_row[s])]
+            sub_marks = [latest_row[s] for s in sub_names]
+            
+            class_df = df[(df['Class'].astype(str) == str(latest_row['Class'])) & (df['Exam_Type'] == latest_row['Exam_Type'])]
+            class_avgs = [class_df[s].mean() for s in sub_names]
+
+            fig = go.Figure()
+            fig.add_trace(go.Bar(x=sub_names, y=sub_marks, name="Student Score", marker_color='#1E88E5', text=sub_marks, textposition='auto'))
+            fig.add_trace(go.Bar(x=sub_names, y=class_avgs, name="Class Average", marker_color='#FFA726', text=[f"{v:.1f}" for v in class_avgs], textposition='auto'))
+            
+            fig.update_layout(barmode='group', title=f"Marks Comparison vs Class Average ({latest_row['Exam_Type']})", xaxis_title="Subjects", yaxis_title="Marks", yaxis=dict(range=[0, 100]))
+            st.plotly_chart(fig, use_container_width=True)
+
+            weak_subs = [f"{s} ({latest_row[s]} marks)" for s in sub_names if float(latest_row[s]) < 33.0]
+            if weak_subs:
+                st.markdown(f"<div class='weak-badge'>{txt['weak_alert']} {', '.join(weak_subs)}</div>", unsafe_allow_html=True)
+
+            st.markdown("---")
+            st.subheader("📝 INDIVIDUAL EXAM SCORECARDS")
+            for index, row in filtered_df.iterrows():
+                with st.expander(f"📌 **{row['Exam_Type']}** | Score: {int(row['Total_Marks'])}/{int(row['Max_Marks'])} ({row['Percentage']:.2f}%) | Rank: #{row['Class_Rank']}", expanded=True):
+                    subject_rows = []
+                    s_no = 1
+                    for sub_name in ALL_SUBJECTS:
+                        if pd.notna(row[sub_name]):
+                            val = row[sub_name]
+                            subject_rows.append({'S.No.': s_no, 'Subject Name': sub_name, 'Marks Obtained': int(val) if float(val).is_integer() else val})
+                            s_no += 1
+                    st.dataframe(pd.DataFrame(subject_rows), hide_index=True, use_container_width=True)
 
 # ==============================================================================
 # 🖼️ GALLERY & BOARD RESULTS
@@ -626,7 +685,6 @@ elif menu == "🏆 BOARD EXAM RESULTS":
     if not toppers_data:
         st.info("No toppers uploaded yet.")
     else:
-        # 🌟 MODIFICATION 4: Right to Left Marquee Traversal
         cards_html = ""
         for t in toppers_data:
             img_b64 = get_base64_image(t.get("photo", ""))
@@ -668,8 +726,69 @@ elif menu == "⚙️ ADMIN PORTAL":
 
         st.markdown("---")
 
-        # Live Realtime Data Editor
-        with st.expander("✏️ 1. EDIT STUDENT DATA & MARKS IN REALTIME", expanded=False):
+        # 🌟 MODIFICATION 1: Bulk Result PDF Export (ZIP File)
+        with st.expander("📦 1. BULK CLASS RESULT PDF EXPORT (ZIP DOWNLOAD)", expanded=False):
+            if st.session_state["student_data"] is not None:
+                df_bulk = st.session_state["student_data"]
+                c_col1, c_col2 = st.columns(2)
+                with c_col1:
+                    bulk_cls = st.selectbox("Select Class for Bulk Export", sorted(df_bulk['Class'].astype(str).unique()), key="bulk_cls")
+                with c_col2:
+                    bulk_exam = st.selectbox("Select Exam Type", sorted(df_bulk['Exam_Type'].astype(str).unique()), key="bulk_exam")
+
+                if st.button("🚀 Generate Bulk ZIP File"):
+                    filtered_bulk = df_bulk[(df_bulk['Class'].astype(str) == str(bulk_cls)) & (df_bulk['Exam_Type'] == bulk_exam)]
+                    if filtered_bulk.empty:
+                        st.warning("No records found for this Class and Exam.")
+                    else:
+                        zip_buffer = io.BytesIO()
+                        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+                            for idx, s_row in filtered_bulk.iterrows():
+                                s_df = filtered_bulk[filtered_bulk['Roll_No'] == s_row['Roll_No']]
+                                pdf_data = generate_pdf_scorecard(s_row, s_df)
+                                pdf_filename = f"Class_{bulk_cls}_{s_row['Roll_No']}_{s_row['Student_Name'].replace(' ', '_')}.pdf"
+                                zip_file.writestr(pdf_filename, pdf_data)
+                        
+                        zip_buffer.seek(0)
+                        st.download_button(
+                            label=f"📥 Download Bulk Report Cards ZIP (Class {bulk_cls})",
+                            data=zip_buffer,
+                            file_name=f"Class_{bulk_cls}_{bulk_exam}_ReportCards.zip",
+                            mime="application/zip",
+                            use_container_width=True
+                        )
+
+        # 🌟 MODIFICATION 2: Teacher-wise Performance Analytics Report
+        with st.expander("📊 2. TEACHER-WISE PERFORMANCE REPORT", expanded=False):
+            if st.session_state["student_data"] is not None:
+                df_t = st.session_state["student_data"]
+                if 'Class_Teacher' in df_t.columns and not df_t['Class_Teacher'].isnull().all():
+                    teachers = sorted(df_t['Class_Teacher'].dropna().astype(str).unique())
+                    teacher_summary = []
+                    
+                    for t in teachers:
+                        t_df = df_t[df_t['Class_Teacher'].astype(str) == t]
+                        tot_students = len(t_df)
+                        passed_students = len(t_df[t_df['Percentage'] >= 33.0])
+                        pass_pct = (passed_students / tot_students * 100) if tot_students > 0 else 0.0
+                        avg_score = t_df['Percentage'].mean()
+                        
+                        teacher_summary.append({
+                            "Class Teacher": t,
+                            "Class(es) Assigned": ", ".join(t_df['Class'].astype(str).unique()),
+                            "Total Students": tot_students,
+                            "Passed Students": passed_students,
+                            "Pass Percentage (%)": f"{pass_pct:.2f}%",
+                            "Average Class Score (%)": f"{avg_score:.2f}%"
+                        })
+                    
+                    t_summary_df = pd.DataFrame(teacher_summary)
+                    st.dataframe(t_summary_df, hide_index=True, use_container_width=True)
+                else:
+                    st.info("Class_Teacher column data is empty or missing.")
+
+        # Realtime Data Editor
+        with st.expander("✏️ 3. EDIT STUDENT DATA & MARKS IN REALTIME", expanded=False):
             if st.session_state["student_data"] is not None:
                 edited_df = st.data_editor(st.session_state["student_data"], num_rows="dynamic", use_container_width=True)
                 if st.button("💾 Save Edits to SQLite Database"):
@@ -684,8 +803,25 @@ elif menu == "⚙️ ADMIN PORTAL":
                     sync_df_to_sqlite(edited_df)
                     st.success("✅ Database updated successfully!")
 
-        # 🌟 MODIFICATION 5: School Gallery Add & Remove Management
-        with st.expander("🖼️ 2. SCHOOL GALLERY MANAGEMENT (ADD / REMOVE)", expanded=False):
+        # 🌟 MODIFICATION 3: Digital Seal & Signatures Management
+        with st.expander("✒️ 4. DIGITAL SEAL & SIGNATURES MANAGEMENT", expanded=False):
+            s_col1, s_col2 = st.columns(2)
+            with s_col1:
+                st.subheader("Upload School Stamp / Seal")
+                seal_file = st.file_uploader("Upload Official Seal", type=["png", "jpg", "jpeg"], key="seal_up")
+                if st.button("Save School Seal") and seal_file:
+                    Image.open(seal_file).save(SEAL_PATH)
+                    st.success("✅ School Seal updated!")
+            
+            with s_col2:
+                st.subheader("Upload Principal Signature")
+                sign_file = st.file_uploader("Upload Digital Sign", type=["png", "jpg", "jpeg"], key="sign_up")
+                if st.button("Save Principal Sign") and sign_file:
+                    Image.open(sign_file).save(SIGN_PATH)
+                    st.success("✅ Principal Signature updated!")
+
+        # Gallery Management
+        with st.expander("🖼️ 5. SCHOOL GALLERY MANAGEMENT (ADD / REMOVE)", expanded=False):
             gallery_upload = st.file_uploader("Upload Image to Gallery", type=["png", "jpg", "jpeg"], key="gal_upload")
             if st.button("➕ Add Image to Gallery") and gallery_upload:
                 gal_path = os.path.join("photos/gallery", gallery_upload.name)
@@ -706,8 +842,8 @@ elif menu == "⚙️ ADMIN PORTAL":
                             st.success(f"Deleted {g_file}")
                             st.rerun()
 
-        # 🌟 MODIFICATION 4: CBSE Toppers Add & Remove Management
-        with st.expander("🏆 3. CBSE TOPPERS MANAGEMENT (ADD / REMOVE)", expanded=False):
+        # Board Toppers Management
+        with st.expander("🏆 6. CBSE TOPPERS MANAGEMENT (ADD / REMOVE)", expanded=False):
             st.subheader("Add New Board Topper")
             b_class = st.selectbox("Class", ["Class 10", "Class 12"])
             b_name = st.text_input("Name")
@@ -745,8 +881,8 @@ elif menu == "⚙️ ADMIN PORTAL":
                             st.success(f"Removed {t['name']}")
                             st.rerun()
 
-        # 🌟 MODIFICATION 6: Background Image Add & Remove Management
-        with st.expander("🎨 4. BRANDING & BACKGROUND MANAGEMENT", expanded=False):
+        # Branding & Background Manager
+        with st.expander("🎨 7. BRANDING & BACKGROUND MANAGEMENT", expanded=False):
             st.subheader("Logo Management")
             up_logo = st.file_uploader("Upload Logo", type=["png", "jpg", "jpeg"], key="logo_up")
             if st.button("Save Logo") and up_logo:
@@ -768,7 +904,7 @@ elif menu == "⚙️ ADMIN PORTAL":
                     st.rerun()
 
         # WhatsApp Bulk Link Generator
-        with st.expander("📲 5. BULK WHATSAPP NOTIFICATIONS", expanded=False):
+        with st.expander("📲 8. BULK WHATSAPP NOTIFICATIONS", expanded=False):
             if st.session_state["student_data"] is not None:
                 df_notif = st.session_state["student_data"]
                 if 'Mobile_No' in df_notif.columns:
@@ -789,7 +925,7 @@ elif menu == "⚙️ ADMIN PORTAL":
                     st.error("Mobile_No column missing in data.")
 
         # Excel Upload & Database Sync
-        with st.expander("📤 6. EXCEL DATA UPLOAD & SQLITE SYNC", expanded=False):
+        with st.expander("📤 9. EXCEL DATA UPLOAD & SQLITE SYNC", expanded=False):
             uploaded_file = st.file_uploader("Upload Excel Sheet (.xlsx)", type=["xlsx", "xls"])
             if st.button("Process & Sync Database") and uploaded_file:
                 with open(EXCEL_FILE_PATH, "wb") as f:
