@@ -12,22 +12,26 @@ from datetime import datetime
 from PIL import Image
 import plotly.graph_objects as go
 
-# ReportLab Imports for PDF & Certificate Generation
+# ReportLab Imports for PDF, Watermark & Certificate Generation
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib import colors
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 st.set_page_config(page_title="PM SHRI JNV CHHOTAUDEPUR - RESULT PORTAL", page_icon="🎓", layout="wide")
 
-# Custom CSS
+# Custom CSS for UI Enhancement and Centering Header
 st.markdown("""
     <style>
     @media (max-width: 768px) {
         .stApp { padding: 5px !important; }
-        h1 { font-size: 1.4rem !important; }
-        h3 { font-size: 1.1rem !important; }
+        h1 { font-size: 1.3rem !important; }
+        h3 { font-size: 1.0rem !important; }
         .stButton>button { width: 100% !important; }
+    }
+    .header-container {
+        text-align: center;
+        margin-bottom: 15px;
     }
     .main-title {
         text-transform: uppercase;
@@ -35,13 +39,16 @@ st.markdown("""
         color: #1E88E5;
         margin: 0 !important;
         padding: 0 !important;
+        text-align: center;
     }
     .sub-title {
         text-transform: uppercase;
-        letter-spacing: 1px;
-        color: #333333;
-        margin-top: 2px !important;
+        letter-spacing: 1.5px;
+        color: #2E7D32;
+        font-weight: 700;
+        margin-top: 4px !important;
         padding: 0 !important;
+        text-align: center;
     }
     .weak-badge {
         background-color: #FFEBEE;
@@ -52,6 +59,13 @@ st.markdown("""
         font-weight: bold;
         margin: 10px 0;
     }
+    .combined-box {
+        background: linear-gradient(135deg, #E3F2FD, #E8F5E9);
+        border: 2px solid #1E88E5;
+        border-radius: 8px;
+        padding: 15px;
+        margin-bottom: 15px;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -59,7 +73,7 @@ st.markdown("""
 for folder in ["photos/students", "photos/gallery", "photos/board", "photos/system", "backups"]:
     os.makedirs(folder, exist_ok=True)
 
-# Security & Credentials
+# Credentials & Database Configuration
 try:
     ADMIN_PASSWORD = st.secrets.get("ADMIN_PASSWORD", os.getenv("ADMIN_PASSWORD", "Jnvcu@me2"))
 except Exception:
@@ -82,7 +96,8 @@ LANG_TEXTS = {
         "overall_status": "Overall Performance Status",
         "pass": "PASS / EXCELLENT",
         "needs_imp": "NEEDS IMPROVEMENT",
-        "chart_title": "Subject-wise Performance Breakdown"
+        "chart_title": "Subject-wise Performance Breakdown",
+        "combined_title": "🌟 COMBINED OVERALL PERFORMANCE ACROSS ALL EXAMS"
     },
     "Hindi": {
         "title": "विद्यार्थी प्रदर्शन एवं परिणाम पोर्टल",
@@ -92,7 +107,8 @@ LANG_TEXTS = {
         "overall_status": "कुल प्रदर्शन स्थिति",
         "pass": "उत्तीर्ण / उत्कृष्ट",
         "needs_imp": "सुधार की आवश्यकता है",
-        "chart_title": "विषय-वार अंक विश्लेषण"
+        "chart_title": "विषय-वार अंक विश्लेषण",
+        "combined_title": "🌟 सभी परीक्षाओं का संयुक्त प्रदर्शन (Combined Performance)"
     },
     "Gujarati": {
         "title": "વિદ્યાર્થી પ્રદર્શન અને પરિણામ પોર્ટલ",
@@ -102,7 +118,8 @@ LANG_TEXTS = {
         "overall_status": "સમગ્ર પ્રદર્શન સ્થિતિ",
         "pass": "ઉત્તીર્ણ / ઉત્કૃષ્ટ",
         "needs_imp": "સુધારાની જરૂર છે",
-        "chart_title": "વિષયવાર ગુણ વિશ્લેષણ ગ્રાફ"
+        "chart_title": "વિષયવાર ગુણ વિશ્લેષણ ગ્રાફ",
+        "combined_title": "🌟 તમામ પરીક્ષાઓનું સંયુક્ત પ્રદર્શન (Combined Performance)"
     }
 }
 
@@ -157,7 +174,7 @@ def get_and_increment_visits():
 
 total_visits = get_and_increment_visits()
 
-# SQLite Database Functions
+# SQLite Database Helper Functions
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
@@ -255,7 +272,6 @@ def process_data_excel(excel_file_source):
     sync_df_to_sqlite(df)
     return df
 
-# Initialize Data
 if "student_data" not in st.session_state or st.session_state["student_data"] is None:
     if os.path.exists(EXCEL_FILE_PATH):
         try:
@@ -276,21 +292,43 @@ def load_board_toppers():
             return json.load(f)
     return []
 
+# Helper Function for Watermark Canvas in ReportLab PDFs
+def create_watermark_callback(watermark_text):
+    def watermark(canvas, doc):
+        canvas.saveState()
+        canvas.setFont('Helvetica-Bold', 40)
+        canvas.setFillColor(colors.HexColor('#E0E0E0'), alpha=0.25)
+        canvas.translate(doc.pagesize[0] / 2.0, doc.pagesize[1] / 2.0)
+        canvas.rotate(35)
+        canvas.drawCentredString(0, 0, watermark_text)
+        canvas.restoreState()
+    return watermark
+
+# 📄 Natural A4 Merit Certificate Generator (with Logo & Watermark)
 def generate_merit_certificate_pdf(student_info, exam_type, percentage, rank):
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), rightMargin=20, leftMargin=20, topMargin=20, bottomMargin=20)
+    doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
     story = []
     styles = getSampleStyleSheet()
 
-    cert_title = ParagraphStyle('CertTitle', parent=styles['Heading1'], fontName='Helvetica-Bold', fontSize=26, leading=30, alignment=1, textColor=colors.HexColor('#1565C0'))
-    sub_title = ParagraphStyle('SubTitle', parent=styles['Heading2'], fontName='Helvetica-Bold', fontSize=18, leading=22, alignment=1, textColor=colors.HexColor('#2E7D32'))
-    body_style = ParagraphStyle('Body', parent=styles['Normal'], fontName='Helvetica', fontSize=14, leading=22, alignment=1)
+    cert_title = ParagraphStyle('CertTitle', parent=styles['Heading1'], fontName='Helvetica-Bold', fontSize=24, leading=28, alignment=1, textColor=colors.HexColor('#1565C0'))
+    sub_title = ParagraphStyle('SubTitle', parent=styles['Heading2'], fontName='Helvetica-Bold', fontSize=16, leading=20, alignment=1, textColor=colors.HexColor('#2E7D32'))
+    body_style = ParagraphStyle('Body', parent=styles['Normal'], fontName='Helvetica', fontSize=13, leading=22, alignment=1)
 
-    story.append(Spacer(1, 20))
+    # Logo inclusion if exists
+    if os.path.exists(LOGO_PATH):
+        try:
+            logo_img = RLImage(LOGO_PATH, width=65, height=65)
+            logo_img.hAlign = 'CENTER'
+            story.append(logo_img)
+            story.append(Spacer(1, 8))
+        except Exception:
+            pass
+
     story.append(Paragraph("PM SHRI JAWAHAR NAVODAYA VIDYALAYA CHHOTAUDEPUR", cert_title))
-    story.append(Spacer(1, 10))
+    story.append(Spacer(1, 6))
     story.append(Paragraph("🏆 CERTIFICATE OF ACADEMIC EXCELLENCE 🏆", sub_title))
-    story.append(Spacer(1, 25))
+    story.append(Spacer(1, 20))
 
     cert_text = f"""
     This is to proudly certify that <b>{student_info['Student_Name']}</b>, Son/Daughter of <b>{student_info['Father_Name']}</b>, 
@@ -299,7 +337,7 @@ def generate_merit_certificate_pdf(student_info, exam_type, percentage, rank):
     in the <b>{exam_type}</b> Examination (Academic Year 2025-26).
     """
     story.append(Paragraph(cert_text, body_style))
-    story.append(Spacer(1, 40))
+    story.append(Spacer(1, 35))
 
     sig_data = [
         [Paragraph("<b>____________________</b>", body_style), Paragraph("<b>____________________</b>", body_style)],
@@ -309,10 +347,12 @@ def generate_merit_certificate_pdf(student_info, exam_type, percentage, rank):
     sig_table.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER')]))
     story.append(sig_table)
 
-    doc.build(story)
+    watermark_fn = create_watermark_callback("PM SHRI JNV CHHOTAUDEPUR")
+    doc.build(story, onFirstPage=watermark_fn, onLaterPages=watermark_fn)
     buffer.seek(0)
     return buffer.getvalue()
 
+# 📄 PDF Scorecard Generator (with Logo & Watermark)
 def generate_pdf_scorecard(student_info, filtered_df):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
@@ -323,10 +363,19 @@ def generate_pdf_scorecard(student_info, filtered_df):
     subtitle_style = ParagraphStyle('DocSubtitle', parent=styles['Heading3'], fontName='Helvetica-Bold', fontSize=11, leading=14, alignment=1, textColor=colors.HexColor('#333333'))
     normal_style = styles['Normal']
 
+    if os.path.exists(LOGO_PATH):
+        try:
+            logo_img = RLImage(LOGO_PATH, width=50, height=50)
+            logo_img.hAlign = 'CENTER'
+            story.append(logo_img)
+            story.append(Spacer(1, 5))
+        except Exception:
+            pass
+
     story.append(Paragraph("PM SHRI JAWAHAR NAVODAYA VIDYALAYA CHHOTAUDEPUR", title_style))
     story.append(Spacer(1, 4))
     story.append(Paragraph("STUDENT ACADEMIC PERFORMANCE REPORT CARD", subtitle_style))
-    story.append(Spacer(1, 15))
+    story.append(Spacer(1, 12))
 
     info_data = [
         [Paragraph(f"<b>Student Name:</b> {student_info['Student_Name']}", normal_style), Paragraph(f"<b>Roll No:</b> {student_info['Roll_No']}", normal_style)],
@@ -368,22 +417,10 @@ def generate_pdf_scorecard(student_info, filtered_df):
         story.append(score_table)
         story.append(Spacer(1, 12))
 
-    doc.build(story)
+    watermark_fn = create_watermark_callback("PM SHRI JNV CHHOTAUDEPUR")
+    doc.build(story, onFirstPage=watermark_fn, onLaterPages=watermark_fn)
     buffer.seek(0)
     return buffer.getvalue()
-
-@st.dialog("⚠️ CONFIRMATION / पुष्टि करें")
-def confirm_action_dialog(title, message, callback_action):
-    st.write(f"**{title}**")
-    st.write(message)
-    c1, c2 = st.columns(2)
-    with c1:
-        if st.button("✅ Yes, Proceed", use_container_width=True):
-            callback_action()
-            st.rerun()
-    with c2:
-        if st.button("❌ Cancel", use_container_width=True):
-            st.rerun()
 
 # Sidebar Navigation & Language Switcher
 st.sidebar.title("☰ NAVIGATION")
@@ -392,11 +429,11 @@ txt = LANG_TEXTS[selected_lang]
 
 menu = st.sidebar.radio("SELECT PORTAL / PAGE:", ["👨‍🎓 PARENT PORTAL", "🖼️ SCHOOL GALLERY", "🏆 BOARD EXAM RESULTS", "⚙️ ADMIN PORTAL"])
 
-head_col1, head_col2 = st.columns([1, 5], vertical_alignment="center")
-with head_col1:
+# Centered Header UI
+head_c1, head_c2, head_c3 = st.columns([1, 4, 1], vertical_alignment="center")
+with head_c2:
     if os.path.exists(LOGO_PATH):
-        st.image(LOGO_PATH, width=95)
-with head_col2:
+        st.markdown(f"<div style='text-align: center;'><img src='data:image/png;base64,{get_base64_image(LOGO_PATH)}' width='90'></div>", unsafe_allow_html=True)
     st.markdown("<h1 class='main-title'>🏫 PM SHRI JAWAHAR NAVODAYA VIDYALAYA CHHOTAUDEPUR</h1>", unsafe_allow_html=True)
     st.markdown(f"<h3 class='sub-title'>{txt['title']}</h3>", unsafe_allow_html=True)
 
@@ -506,7 +543,6 @@ if menu == "👨‍🎓 PARENT PORTAL":
                     with b_c1:
                         st.download_button("📥 Download Report Card (PDF)", data=pdf_bytes, file_name=f"Report_{student_info['Roll_No']}.pdf", mime="application/pdf", use_container_width=True)
                     
-                    # Merit Certificate Download for Top 3 Rankers
                     best_row = filtered_df.sort_values('Class_Rank').iloc[0]
                     if best_row['Class_Rank'] <= 3:
                         with b_c2:
@@ -515,13 +551,36 @@ if menu == "👨‍🎓 PARENT PORTAL":
 
                 st.markdown("---")
                 
-                # Visual Analytics: Student Score vs Class Average
+                # 🌟 MODIFICATION 1: Combined Performance Performance Summary
+                st.subheader(txt['combined_title'])
+                tot_obtained = filtered_df['Total_Marks'].sum()
+                tot_max = filtered_df['Max_Marks'].sum()
+                overall_pct = (tot_obtained / tot_max * 100) if tot_max > 0 else 0.0
+                
+                m1, m2, m3, m4 = st.columns(4)
+                m1.metric("Exams Taken", len(filtered_df))
+                m2.metric("Total Marks Obtained", f"{int(tot_obtained)}")
+                m3.metric("Combined Maximum Marks", f"{int(tot_max)}")
+                m4.metric("Overall Percentage", f"{overall_pct:.2f}%")
+
+                comb_data = []
+                for idx, r in filtered_df.iterrows():
+                    comb_data.append({
+                        "Exam Name": r['Exam_Type'],
+                        "Marks Obtained": f"{int(r['Total_Marks'])} / {int(r['Max_Marks'])}",
+                        "Percentage": f"{r['Percentage']:.2f}%",
+                        "Class Rank": f"#{r['Class_Rank']}"
+                    })
+                st.dataframe(pd.DataFrame(comb_data), hide_index=True, use_container_width=True)
+
+                st.markdown("---")
+                
+                # Visual Analytics Chart vs Class Average
                 st.subheader(f"📊 {txt['chart_title']}")
                 latest_row = filtered_df.iloc[-1]
                 sub_names = [s for s in ALL_SUBJECTS if s in latest_row and pd.notna(latest_row[s])]
                 sub_marks = [latest_row[s] for s in sub_names]
                 
-                # Class Average Calculation
                 class_df = df[(df['Class'].astype(str) == str(latest_row['Class'])) & (df['Exam_Type'] == latest_row['Exam_Type'])]
                 class_avgs = [class_df[s].mean() for s in sub_names]
 
@@ -532,13 +591,12 @@ if menu == "👨‍🎓 PARENT PORTAL":
                 fig.update_layout(barmode='group', title=f"Marks Comparison vs Class Average ({latest_row['Exam_Type']})", xaxis_title="Subjects", yaxis_title="Marks", yaxis=dict(range=[0, 100]))
                 st.plotly_chart(fig, use_container_width=True)
 
-                # Weak Subject Red Alert Badge
                 weak_subs = [f"{s} ({latest_row[s]} marks)" for s in sub_names if float(latest_row[s]) < 33.0]
                 if weak_subs:
                     st.markdown(f"<div class='weak-badge'>{txt['weak_alert']} {', '.join(weak_subs)}</div>", unsafe_allow_html=True)
 
                 st.markdown("---")
-                st.subheader("📝 EXAM SCORECARD")
+                st.subheader("📝 INDIVIDUAL EXAM SCORECARDS")
                 for index, row in filtered_df.iterrows():
                     with st.expander(f"📌 **{row['Exam_Type']}** | Score: {int(row['Total_Marks'])}/{int(row['Max_Marks'])} ({row['Percentage']:.2f}%) | Rank: #{row['Class_Rank']}", expanded=True):
                         subject_rows = []
@@ -563,11 +621,12 @@ elif menu == "🖼️ SCHOOL GALLERY":
         st.markdown(f'<marquee direction="left" scrollamount="7">{images_html}</marquee>', unsafe_allow_html=True)
 
 elif menu == "🏆 BOARD EXAM RESULTS":
-    st.header("🎓 CBSE BOARD TOPPERS")
+    st.header("🎓 CBSE BOARD TOPPERS HALL OF FAME")
     toppers_data = load_board_toppers()
     if not toppers_data:
         st.info("No toppers uploaded yet.")
     else:
+        # 🌟 MODIFICATION 4: Right to Left Marquee Traversal
         cards_html = ""
         for t in toppers_data:
             img_b64 = get_base64_image(t.get("photo", ""))
@@ -609,11 +668,10 @@ elif menu == "⚙️ ADMIN PORTAL":
 
         st.markdown("---")
 
-        # Live Data Editor
+        # Live Realtime Data Editor
         with st.expander("✏️ 1. EDIT STUDENT DATA & MARKS IN REALTIME", expanded=False):
             if st.session_state["student_data"] is not None:
                 edited_df = st.data_editor(st.session_state["student_data"], num_rows="dynamic", use_container_width=True)
-                
                 if st.button("💾 Save Edits to SQLite Database"):
                     for sub in ALL_SUBJECTS:
                         if sub in edited_df.columns:
@@ -625,11 +683,92 @@ elif menu == "⚙️ ADMIN PORTAL":
                     st.session_state["student_data"] = edited_df
                     sync_df_to_sqlite(edited_df)
                     st.success("✅ Database updated successfully!")
-            else:
-                st.info("No data available to edit.")
 
-        # WhatsApp Link Generator
-        with st.expander("📲 2. BULK WHATSAPP NOTIFICATIONS", expanded=False):
+        # 🌟 MODIFICATION 5: School Gallery Add & Remove Management
+        with st.expander("🖼️ 2. SCHOOL GALLERY MANAGEMENT (ADD / REMOVE)", expanded=False):
+            gallery_upload = st.file_uploader("Upload Image to Gallery", type=["png", "jpg", "jpeg"], key="gal_upload")
+            if st.button("➕ Add Image to Gallery") and gallery_upload:
+                gal_path = os.path.join("photos/gallery", gallery_upload.name)
+                Image.open(gallery_upload).save(gal_path)
+                st.success("✅ Gallery image added successfully!")
+                st.rerun()
+
+            gallery_files = [f for f in os.listdir("photos/gallery") if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+            if gallery_files:
+                st.write("**Current Gallery Photos (Click to Remove):**")
+                cols = st.columns(4)
+                for idx, g_file in enumerate(gallery_files):
+                    with cols[idx % 4]:
+                        g_path = os.path.join("photos/gallery", g_file)
+                        st.image(g_path, use_container_width=True)
+                        if st.button(f"🗑️ Delete", key=f"del_gal_{idx}"):
+                            os.remove(g_path)
+                            st.success(f"Deleted {g_file}")
+                            st.rerun()
+
+        # 🌟 MODIFICATION 4: CBSE Toppers Add & Remove Management
+        with st.expander("🏆 3. CBSE TOPPERS MANAGEMENT (ADD / REMOVE)", expanded=False):
+            st.subheader("Add New Board Topper")
+            b_class = st.selectbox("Class", ["Class 10", "Class 12"])
+            b_name = st.text_input("Name")
+            b_percent = st.text_input("Percentage (e.g. 98.4%)")
+            b_year = st.text_input("Year", value="2025-26")
+            b_photo = st.file_uploader("Photo", type=["jpg", "png", "jpeg"])
+            if st.button("Add Board Topper") and b_name and b_photo:
+                photo_file = f"photos/board/{b_class.replace(' ', '_')}_{clean_val(b_name)}.png"
+                Image.open(b_photo).save(photo_file)
+                toppers = load_board_toppers()
+                toppers.append({"class": b_class, "name": b_name, "percentage": b_percent, "year": b_year, "photo": photo_file})
+                with open(BOARD_TOPPERS_FILE, "w") as f:
+                    json.dump(toppers, f)
+                st.success("✅ Board Topper Added!")
+                st.rerun()
+
+            toppers_list = load_board_toppers()
+            if toppers_list:
+                st.markdown("---")
+                st.write("**Current Board Toppers (Click to Remove):**")
+                for idx, t in enumerate(toppers_list):
+                    t_col1, t_col2 = st.columns([4, 1])
+                    with t_col1:
+                        st.write(f"🏆 **{t['name']}** ({t['class']}, {t['year']}) - {t['percentage']}")
+                    with t_col2:
+                        if st.button(f"🗑️ Remove", key=f"del_top_{idx}"):
+                            if t.get("photo") and os.path.exists(t["photo"]):
+                                try:
+                                    os.remove(t["photo"])
+                                except Exception:
+                                    pass
+                            toppers_list.pop(idx)
+                            with open(BOARD_TOPPERS_FILE, "w") as f:
+                                json.dump(toppers_list, f)
+                            st.success(f"Removed {t['name']}")
+                            st.rerun()
+
+        # 🌟 MODIFICATION 6: Background Image Add & Remove Management
+        with st.expander("🎨 4. BRANDING & BACKGROUND MANAGEMENT", expanded=False):
+            st.subheader("Logo Management")
+            up_logo = st.file_uploader("Upload Logo", type=["png", "jpg", "jpeg"], key="logo_up")
+            if st.button("Save Logo") and up_logo:
+                Image.open(up_logo).save(LOGO_PATH)
+                st.success("✅ Logo Updated!")
+
+            st.markdown("---")
+            st.subheader("Background Image Management")
+            bg_upload = st.file_uploader("Upload Background Image", type=["png", "jpg", "jpeg"], key="bg_up")
+            if st.button("🖼️ Set Background") and bg_upload:
+                Image.open(bg_upload).save(BG_PATH)
+                st.success("✅ Background image updated!")
+                st.rerun()
+
+            if os.path.exists(BG_PATH):
+                if st.button("🗑️ Remove Background Image"):
+                    os.remove(BG_PATH)
+                    st.success("✅ Background image removed!")
+                    st.rerun()
+
+        # WhatsApp Bulk Link Generator
+        with st.expander("📲 5. BULK WHATSAPP NOTIFICATIONS", expanded=False):
             if st.session_state["student_data"] is not None:
                 df_notif = st.session_state["student_data"]
                 if 'Mobile_No' in df_notif.columns:
@@ -649,31 +788,8 @@ elif menu == "⚙️ ADMIN PORTAL":
                 else:
                     st.error("Mobile_No column missing in data.")
 
-        # Media & Branding
-        with st.expander("🎨 3. BRANDING & BACKGROUND", expanded=False):
-            up_logo = st.file_uploader("Upload Logo", type=["png", "jpg"])
-            if st.button("Save Logo") and up_logo:
-                Image.open(up_logo).save(LOGO_PATH)
-                st.success("Logo Updated!")
-
-        # Board Toppers Management
-        with st.expander("🏆 4. BOARD TOPPERS MANAGEMENT", expanded=False):
-            b_class = st.selectbox("Class", ["Class 10", "Class 12"])
-            b_name = st.text_input("Name")
-            b_percent = st.text_input("Percentage (e.g. 98.4%)")
-            b_year = st.text_input("Year", value="2025-26")
-            b_photo = st.file_uploader("Photo", type=["jpg", "png"])
-            if st.button("Add Board Topper") and b_name and b_photo:
-                photo_file = f"photos/board/{b_class.replace(' ', '_')}_{clean_val(b_name)}.png"
-                Image.open(b_photo).save(photo_file)
-                toppers = load_board_toppers()
-                toppers.append({"class": b_class, "name": b_name, "percentage": b_percent, "year": b_year, "photo": photo_file})
-                with open(BOARD_TOPPERS_FILE, "w") as f:
-                    json.dump(toppers, f)
-                st.success("Topper Added!")
-
         # Excel Upload & Database Sync
-        with st.expander("📤 5. EXCEL DATA UPLOAD & SQLITE SYNC", expanded=False):
+        with st.expander("📤 6. EXCEL DATA UPLOAD & SQLITE SYNC", expanded=False):
             uploaded_file = st.file_uploader("Upload Excel Sheet (.xlsx)", type=["xlsx", "xls"])
             if st.button("Process & Sync Database") and uploaded_file:
                 with open(EXCEL_FILE_PATH, "wb") as f:
