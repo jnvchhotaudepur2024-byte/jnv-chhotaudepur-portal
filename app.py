@@ -334,7 +334,6 @@ def generate_merit_certificate_pdf(student_info, exam_type, percentage, rank):
     story.append(Paragraph(cert_text, body_style))
     story.append(Spacer(1, 25))
 
-    # 🌟 Digital Seal & Signature Inclusion
     seal_element = RLImage(SEAL_PATH, width=50, height=50) if os.path.exists(SEAL_PATH) else Paragraph("<b>[OFFICIAL SEAL]</b>", body_style)
     sign_element = RLImage(SIGN_PATH, width=70, height=35) if os.path.exists(SIGN_PATH) else Paragraph("<b>____________________</b>", body_style)
 
@@ -351,7 +350,7 @@ def generate_merit_certificate_pdf(student_info, exam_type, percentage, rank):
     buffer.seek(0)
     return buffer.getvalue()
 
-# 📄 Scorecard PDF Generator with Digital Seal & Signature
+# 📄 Scorecard PDF Generator
 def generate_pdf_scorecard(student_info, filtered_df):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
@@ -416,7 +415,6 @@ def generate_pdf_scorecard(student_info, filtered_df):
         story.append(score_table)
         story.append(Spacer(1, 10))
 
-    # 🌟 Digital Signatures Footer Table
     seal_element = RLImage(SEAL_PATH, width=45, height=45) if os.path.exists(SEAL_PATH) else Paragraph("<b>[SEAL]</b>", normal_style)
     sign_element = RLImage(SIGN_PATH, width=65, height=30) if os.path.exists(SIGN_PATH) else Paragraph("<b>________________</b>", normal_style)
 
@@ -441,7 +439,7 @@ txt = LANG_TEXTS[selected_lang]
 
 menu = st.sidebar.radio("SELECT PORTAL / PAGE:", ["👨‍🎓 PARENT PORTAL", "🖼️ SCHOOL GALLERY", "🏆 BOARD EXAM RESULTS", "⚙️ ADMIN PORTAL"])
 
-# 🌟 MODIFICATION 6: Left Aligned Logo & Header Title (Side-by-Side)
+# Left Aligned Logo & Header Title
 h_col1, h_col2 = st.columns([1, 6], vertical_alignment="center")
 with h_col1:
     if os.path.exists(LOGO_PATH):
@@ -497,7 +495,6 @@ if menu == "👨‍🎓 PARENT PORTAL":
         st.warning("⚠️ Data file not found. Kripya Admin Portal se Data Upload karein.")
     else:
         df = st.session_state["student_data"]
-        # 🌟 MODIFICATION 4: OTP Based Parent Login Option Included
         search_method = st.radio("Choose Verification Method:", [
             "Option 1: Roll No & Date of Birth (DOB)", 
             "Option 2: Roll No & Aadhaar Number", 
@@ -608,7 +605,7 @@ if menu == "👨‍🎓 PARENT PORTAL":
             m3.metric("Combined Maximum Marks", f"{int(tot_max)}")
             m4.metric("Overall Percentage", f"{overall_pct:.2f}%")
 
-            # 🌟 MODIFICATION 5: Multi-Exam Progress Trend Line Graph
+            # Multi-Exam Progress Trend Line Graph
             st.markdown("---")
             st.subheader(txt['trend_title'])
             
@@ -685,18 +682,13 @@ elif menu == "🏆 BOARD EXAM RESULTS":
     if not toppers_data:
         st.info("No toppers uploaded yet.")
     else:
+        # 🌟 FIXED HTML RENDER: Valid base64 checking & marquee formatting
         cards_html = ""
         for t in toppers_data:
             img_b64 = get_base64_image(t.get("photo", ""))
-            img_src = f"data:image/png;base64,{img_b64}" if img_b64 else ""
-            cards_html += f"""
-            <div style="display: inline-block; width: 200px; background: #fff; padding: 12px; margin-right: 15px; border-radius: 10px; border: 2px solid #1E88E5; text-align: center;">
-                <img src="{img_src}" style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 2px solid #1565C0;">
-                <div style="font-weight: bold; color: #0D47A1; margin-top: 5px;">{t['name']}</div>
-                <div style="font-size: 12px;">{t['class']} ({t['year']})</div>
-                <div style="font-size: 15px; font-weight: bold; color: #2E7D32; background: #E8F5E9; margin-top: 4px;">🏆 {t['percentage']}</div>
-            </div>
-            """
+            img_src = f"data:image/png;base64,{img_b64}" if img_b64 else "https://via.placeholder.com/80"
+            cards_html += f"""<div style="display: inline-block; width: 200px; background: #fff; padding: 12px; margin-right: 15px; border-radius: 10px; border: 2px solid #1E88E5; text-align: center; vertical-align: top;"><img src="{img_src}" style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 2px solid #1565C0;"><div style="font-weight: bold; color: #0D47A1; margin-top: 5px;">{t['name']}</div><div style="font-size: 12px; color: #333;">{t['class']} ({t['year']})</div><div style="font-size: 15px; font-weight: bold; color: #2E7D32; background: #E8F5E9; margin-top: 4px; border-radius: 4px; padding: 2px 0;">🏆 {t['percentage']}</div></div>"""
+        
         st.markdown(f'<marquee direction="left" scrollamount="6" onmouseover="this.stop();" onmouseout="this.start();">{cards_html}</marquee>', unsafe_allow_html=True)
 
 # ==============================================================================
@@ -726,7 +718,7 @@ elif menu == "⚙️ ADMIN PORTAL":
 
         st.markdown("---")
 
-        # 🌟 MODIFICATION 1: Bulk Result PDF Export (ZIP File)
+        # Bulk Result PDF Export
         with st.expander("📦 1. BULK CLASS RESULT PDF EXPORT (ZIP DOWNLOAD)", expanded=False):
             if st.session_state["student_data"] is not None:
                 df_bulk = st.session_state["student_data"]
@@ -758,7 +750,7 @@ elif menu == "⚙️ ADMIN PORTAL":
                             use_container_width=True
                         )
 
-        # 🌟 MODIFICATION 2: Teacher-wise Performance Analytics Report
+        # Teacher-wise Performance Analytics
         with st.expander("📊 2. TEACHER-WISE PERFORMANCE REPORT", expanded=False):
             if st.session_state["student_data"] is not None:
                 df_t = st.session_state["student_data"]
@@ -803,7 +795,7 @@ elif menu == "⚙️ ADMIN PORTAL":
                     sync_df_to_sqlite(edited_df)
                     st.success("✅ Database updated successfully!")
 
-        # 🌟 MODIFICATION 3: Digital Seal & Signatures Management
+        # Digital Seal & Signatures
         with st.expander("✒️ 4. DIGITAL SEAL & SIGNATURES MANAGEMENT", expanded=False):
             s_col1, s_col2 = st.columns(2)
             with s_col1:
