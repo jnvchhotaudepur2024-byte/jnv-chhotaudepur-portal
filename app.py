@@ -22,15 +22,28 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 st.set_page_config(page_title="PM SHRI JNV CHHOTAUDEPUR - RESULT PORTAL", page_icon="🎓", layout="wide")
 
-# Custom CSS & Mobile Optimization
+# Enhanced Custom CSS & Responsive Mobile Optimization
 st.markdown("""
     <style>
     @media (max-width: 768px) {
-        .stApp { padding: 5px !important; }
+        .stApp { padding: 4px !important; }
         h1 { font-size: 1.1rem !important; }
-        h2 { font-size: 1.0rem !important; }
+        h2 { font-size: 0.95rem !important; }
         h3 { font-size: 0.85rem !important; }
-        .stButton>button { width: 100% !important; }
+        .stButton>button { width: 100% !important; padding: 6px 10px !important; }
+        .mobile-hide { display: none !important; }
+        .topper-card { width: 160px !important; padding: 8px !important; margin-right: 8px !important; }
+        .topper-card img { width: 60px !important; height: 60px !important; }
+    }
+    .header-logo-left {
+        display: flex;
+        justify-content: flex-start;
+        align-items: center;
+    }
+    .header-logo-right {
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
     }
     .main-title {
         text-transform: uppercase;
@@ -38,7 +51,7 @@ st.markdown("""
         color: #1E88E5;
         margin: 0 !important;
         padding: 0 !important;
-        font-size: 1.5rem;
+        font-size: 1.45rem;
         text-align: center;
     }
     .sub-title {
@@ -71,6 +84,13 @@ st.markdown("""
         text-align: center;
         box-shadow: 0 4px 6px rgba(0,0,0,0.1);
         vertical-align: top;
+    }
+    .hall-of-fame-box {
+        background: linear-gradient(135deg, #E3F2FD, #FFF9C4);
+        border: 2px solid #1565C0;
+        border-radius: 10px;
+        padding: 12px;
+        margin-bottom: 20px;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -455,20 +475,21 @@ def generate_pdf_scorecard(student_info, filtered_df):
     return buffer.getvalue()
 
 
-# UPDATE 3: Dual Logo Header Layout (Left & Right Both Sides)
+# Header Layout (Requirement 1 & 7: Space Utilization & Mobile 1 Logo Only)
 h_col1, h_col2, h_col3 = st.columns([1.2, 5.6, 1.2], vertical_alignment="center")
 with h_col1:
     if os.path.exists(LOGO_PATH):
-        st.image(LOGO_PATH, width=85)
+        st.markdown(f'<div class="header-logo-left"><img src="data:image/png;base64,{get_base64_image(LOGO_PATH)}" width="80"></div>', unsafe_allow_html=True)
 with h_col2:
     st.markdown("<h2 class='main-title'>PM SHRI JAWAHAR NAVODAYA VIDYALAYA CHHOTAUDEPUR</h2>", unsafe_allow_html=True)
 with h_col3:
     if os.path.exists(LOGO_PATH):
-        st.image(LOGO_PATH, width=85)
+        # Far-right aligned logo, hidden on mobile screens via 'mobile-hide' CSS class
+        st.markdown(f'<div class="header-logo-right mobile-hide"><img src="data:image/png;base64,{get_base64_image(LOGO_PATH)}" width="80"></div>', unsafe_allow_html=True)
 
 st.markdown("---")
 
-# UPDATE 5: Top CBSE Style Navigation Menu Bar
+# Navigation Menu Bar
 nav_col1, nav_col2 = st.columns([4, 1.2], vertical_alignment="center")
 with nav_col1:
     menu = st.radio(
@@ -483,6 +504,26 @@ with nav_col2:
 txt = LANG_TEXTS[selected_lang]
 st.markdown(f"<h4 class='sub-title'>{txt['title']}</h4>", unsafe_allow_html=True)
 st.markdown("---")
+
+# Helper function to render traveling toppers marquee cards
+def render_topper_marquee(topper_list):
+    if not topper_list:
+        st.info("Top performers details will be displayed here once available.")
+        return
+    cards_html = ""
+    for t in topper_list:
+        img_b64 = get_base64_image(t.get("photo", ""))
+        img_src = f"data:image/png;base64,{img_b64}" if img_b64 else "https://via.placeholder.com/80?text=Topper"
+        card = (
+            f'<div class="topper-card">'
+            f'<img src="{img_src}" style="width: 75px; height: 75px; border-radius: 50%; object-fit: cover; border: 2px solid #1565C0;">'
+            f'<div style="font-weight: bold; color: #0D47A1; margin-top: 5px; font-size: 13px;">{t["name"]}</div>'
+            f'<div style="font-size: 11px; color: #333;">Class {t["class"]} ({t.get("year", "2025-26")})</div>'
+            f'<div style="font-size: 14px; font-weight: bold; color: #2E7D32; background: #E8F5E9; margin-top: 4px; border-radius: 4px; padding: 2px 0;">🏆 {t["percentage"]}</div>'
+            f'</div>'
+        )
+        cards_html += card
+    st.markdown(f'<marquee direction="left" scrollamount="6" onmouseover="this.stop();" onmouseout="this.start();">{cards_html}</marquee>', unsafe_allow_html=True)
 
 # ==============================================================================
 # 👨‍🎓 PARENT PORTAL
@@ -501,8 +542,40 @@ if menu == "👨‍🎓 PARENT PORTAL":
         """,
         unsafe_allow_html=True
     )
+
+    # Requirements 2 & 3: Parent Portal Hall of Fame (Class 12 & Class 10 Traveling Toppers)
+    st.markdown("<div class='hall-of-fame-box'>", unsafe_allow_html=True)
+    st.markdown("<h4 style='text-align: center; color: #0D47A1; margin-bottom: 8px;'>🏆 ACADEMIC HALL OF FAME (SCHOOL TOPPERS) 🏆</h4>", unsafe_allow_html=True)
     
-    # UPDATE 4: Exam Sequence Priority (Selecting Most Recent Exam in Priority Order)
+    # Combined Topper Sources (Board toppers JSON + Current Exam Data Toppers)
+    all_toppers_list = load_board_toppers()
+    
+    # Extract Toppers from Current Data if available
+    if st.session_state["student_data"] is not None and not st.session_state["student_data"].empty:
+        df_top = st.session_state["student_data"]
+        for c_val in ['12', '10']:
+            c_df = df_top[df_top['Class'].astype(str).str.contains(c_val, na=False)]
+            if not c_df.empty:
+                top_student = c_df.sort_values(by='Percentage', ascending=False).iloc[0]
+                photo_p = f"photos/students/{top_student['Roll_No']}.png"
+                all_toppers_list.append({
+                    "name": top_student['Student_Name'],
+                    "class": str(top_student['Class']),
+                    "percentage": f"{top_student['Percentage']:.1f}%",
+                    "year": "Current Exam",
+                    "photo": photo_p if os.path.exists(photo_p) else ""
+                })
+
+    hof_tab12, hof_tab10 = st.tabs(["🎓 Class 12 Toppers", "🎓 Class 10 Toppers"])
+    with hof_tab12:
+        top_12 = [t for t in all_toppers_list if "12" in str(t.get("class", ""))]
+        render_topper_marquee(top_12)
+    with hof_tab10:
+        top_10 = [t for t in all_toppers_list if "10" in str(t.get("class", ""))]
+        render_topper_marquee(top_10)
+    st.markdown("</div>", unsafe_allow_html=True)
+    
+    # Exam Sequence Priority Ticker
     if st.session_state["student_data"] is not None:
         df_data = st.session_state["student_data"]
         if not df_data.empty and 'Exam_Type' in df_data.columns:
@@ -711,7 +784,6 @@ elif menu == "🖼️ SCHOOL GALLERY":
         images_html = "".join([f'<img src="data:image/png;base64,{get_base64_image(os.path.join("photos/gallery", img))}" style="height: 200px; margin-right: 15px; border-radius: 8px; border: 2px solid #1E88E5;">' for img in gallery_files])
         st.markdown(f'<marquee direction="left" scrollamount="7">{images_html}</marquee>', unsafe_allow_html=True)
 
-# UPDATE 1 & 2: Dynamic Board Toppers Section (Class 12 First, Fixed HTML rendering)
 elif menu == "🏆 BOARD EXAM RESULTS":
     st.header("🎓 CBSE BOARD TOPPERS HALL OF FAME")
     toppers_data = load_board_toppers()
@@ -719,26 +791,6 @@ elif menu == "🏆 BOARD EXAM RESULTS":
         st.info("No toppers uploaded yet. Add toppers from Admin Dashboard.")
     else:
         tab12, tab10 = st.tabs(["🎓 Class 12 Toppers", "🎓 Class 10 Toppers"])
-
-        def render_topper_marquee(topper_list):
-            if not topper_list:
-                st.info("Is class ke toppers abhi upload nahi hue hain.")
-                return
-            cards_html = ""
-            for t in topper_list:
-                img_b64 = get_base64_image(t.get("photo", ""))
-                img_src = f"data:image/png;base64,{img_b64}" if img_b64 else "https://via.placeholder.com/80"
-                card = (
-                    f'<div class="topper-card">'
-                    f'<img src="{img_src}" style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 2px solid #1565C0;">'
-                    f'<div style="font-weight: bold; color: #0D47A1; margin-top: 5px;">{t["name"]}</div>'
-                    f'<div style="font-size: 12px; color: #333;">{t["class"]} ({t["year"]})</div>'
-                    f'<div style="font-size: 15px; font-weight: bold; color: #2E7D32; background: #E8F5E9; margin-top: 4px; border-radius: 4px; padding: 2px 0;">🏆 {t["percentage"]}</div>'
-                    f'</div>'
-                )
-                cards_html += card
-            st.markdown(f'<marquee direction="left" scrollamount="6" onmouseover="this.stop();" onmouseout="this.start();">{cards_html}</marquee>', unsafe_allow_html=True)
-
         with tab12:
             t12_list = [t for t in toppers_data if "12" in str(t.get("class", ""))]
             render_topper_marquee(t12_list)
@@ -833,20 +885,56 @@ elif menu == "⚙️ ADMIN PORTAL":
                 else:
                     st.info("Class_Teacher column data is empty or missing.")
 
+        # Requirements 4, 5 & 6: Realtime Data Edit, Photo Upload, Rank Modifier & Confirmation Pop-up
         with st.expander("✏️ 3. EDIT STUDENT DATA & MARKS IN REALTIME", expanded=False):
             if st.session_state["student_data"] is not None:
-                edited_df = st.data_editor(st.session_state["student_data"], num_rows="dynamic", use_container_width=True)
+                st.markdown("##### 📷 Upload Student Photo")
+                up_p_col1, up_p_col2 = st.columns([2, 2])
+                with up_p_col1:
+                    roll_to_photo = st.selectbox("Select Student Roll No for Photo Upload", sorted(st.session_state["student_data"]['Roll_No'].astype(str).unique()), key="photo_roll_sel")
+                with up_p_col2:
+                    stu_photo_file = st.file_uploader("Upload Passport Size Photo", type=["png", "jpg", "jpeg"], key="stu_photo_up")
+                    if st.button("🖼️ Save Student Photo"):
+                        if stu_photo_file and roll_to_photo:
+                            Image.open(stu_photo_file).save(f"photos/students/{roll_to_photo}.png")
+                            st.success(f"✅ Photo uploaded successfully for Roll No: {roll_to_photo}!")
+                        else:
+                            st.error("Select student roll number and photo file.")
+
+                st.markdown("---")
+                st.markdown("##### 📝 Edit Student Data & Rank (Realtime)")
+                st.caption("Tip: You can modify Marks, Details, and Topper Rank ('Class_Rank') directly in the table below.")
+                
+                edited_df = st.data_editor(st.session_state["student_data"], num_rows="dynamic", use_container_width=True, key="db_realtime_editor")
+
+                # Requirement 6: Confirmation Dialog Trigger
+                if "show_save_confirm" not in st.session_state:
+                    st.session_state["show_save_confirm"] = False
+
                 if st.button("💾 Save Edits to SQLite Database"):
-                    for sub in ALL_SUBJECTS:
-                        if sub in edited_df.columns:
-                            edited_df[sub] = pd.to_numeric(edited_df[sub], errors='coerce')
-                    edited_df['Total_Marks'] = edited_df[ALL_SUBJECTS].sum(axis=1, skipna=True)
-                    edited_df['Percentage'] = ((edited_df['Total_Marks'] / edited_df['Max_Marks']) * 100).round(2)
-                    edited_df['Class_Rank'] = edited_df.groupby(['Class', 'Exam_Type'])['Total_Marks'].rank(ascending=False, method='min').fillna(0).astype(int)
-                    
-                    st.session_state["student_data"] = edited_df
-                    sync_df_to_sqlite(edited_df)
-                    st.success("✅ Database updated successfully!")
+                    st.session_state["show_save_confirm"] = True
+
+                if st.session_state.get("show_save_confirm", False):
+                    st.warning("❓ **ARE YOU SURE YOU WANT TO UPDATE THE DATABASE?**")
+                    confirm_col1, confirm_col2 = st.columns(2)
+                    with confirm_col1:
+                        if st.button("✅ YES, SAVE DATA", use_container_width=True):
+                            for sub in ALL_SUBJECTS:
+                                if sub in edited_df.columns:
+                                    edited_df[sub] = pd.to_numeric(edited_df[sub], errors='coerce')
+                            edited_df['Total_Marks'] = edited_df[ALL_SUBJECTS].sum(axis=1, skipna=True)
+                            edited_df['Percentage'] = ((edited_df['Total_Marks'] / edited_df['Max_Marks']) * 100).round(2)
+                            
+                            st.session_state["student_data"] = edited_df
+                            sync_df_to_sqlite(edited_df)
+                            st.session_state["show_save_confirm"] = False
+                            st.success("✅ Database updated successfully!")
+                            st.rerun()
+                    with confirm_col2:
+                        if st.button("❌ NO, CANCEL", use_container_width=True):
+                            st.session_state["show_save_confirm"] = False
+                            st.info("Update cancelled. Data was not saved.")
+                            st.rerun()
 
         with st.expander("✒️ 4. DIGITAL SEAL & SIGNATURES MANAGEMENT", expanded=False):
             s_col1, s_col2 = st.columns(2)
@@ -973,7 +1061,7 @@ elif menu == "⚙️ ADMIN PORTAL":
                 st.session_state["student_data"] = process_data_excel(EXCEL_FILE_PATH)
                 st.success("Excel & SQLite Database Successfully Updated!")
 
-# UPDATE 6: Footer Text Update
+# Footer Text
 st.markdown("---")
 st.markdown("""
     <div style='text-align: center; color: #555555; padding: 12px; font-size: 14px;'>
