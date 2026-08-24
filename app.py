@@ -22,21 +22,15 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 st.set_page_config(page_title="PM SHRI JNV CHHOTAUDEPUR - RESULT PORTAL", page_icon="🎓", layout="wide")
 
-# Custom CSS for UI Alignment
+# 1. Custom CSS & Mobile Optimization
 st.markdown("""
     <style>
     @media (max-width: 768px) {
         .stApp { padding: 5px !important; }
-        h1 { font-size: 1.2rem !important; }
-        h3 { font-size: 0.9rem !important; }
+        h1 { font-size: 1.1rem !important; }
+        h2 { font-size: 1.0rem !important; }
+        h3 { font-size: 0.85rem !important; }
         .stButton>button { width: 100% !important; }
-    }
-    .header-box {
-        display: flex;
-        align-items: center;
-        justify-content: flex-start;
-        gap: 15px;
-        margin-bottom: 15px;
     }
     .main-title {
         text-transform: uppercase;
@@ -44,16 +38,18 @@ st.markdown("""
         color: #1E88E5;
         margin: 0 !important;
         padding: 0 !important;
-        font-size: 1.6rem;
+        font-size: 1.5rem;
+        text-align: center;
     }
     .sub-title {
         text-transform: uppercase;
         letter-spacing: 1px;
         color: #2E7D32;
         font-weight: 700;
-        margin-top: 2px !important;
+        margin-top: 4px !important;
         padding: 0 !important;
-        font-size: 1.1rem;
+        font-size: 1.05rem;
+        text-align: center;
     }
     .weak-badge {
         background-color: #FFEBEE;
@@ -63,6 +59,18 @@ st.markdown("""
         color: #B71C1C;
         font-weight: bold;
         margin: 10px 0;
+    }
+    .topper-card {
+        display: inline-block;
+        width: 210px;
+        background: #ffffff;
+        padding: 12px;
+        margin-right: 15px;
+        border-radius: 10px;
+        border: 2px solid #1E88E5;
+        text-align: center;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        vertical-align: top;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -288,7 +296,6 @@ def load_board_toppers():
             return json.load(f)
     return []
 
-# Helper Function for Watermark Canvas in PDF
 def create_watermark_callback(watermark_text):
     def watermark(canvas, doc):
         canvas.saveState()
@@ -300,7 +307,6 @@ def create_watermark_callback(watermark_text):
         canvas.restoreState()
     return watermark
 
-# 📄 Merit Certificate PDF Generator with Seal & Signature
 def generate_merit_certificate_pdf(student_info, exam_type, percentage, rank):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
@@ -350,7 +356,6 @@ def generate_merit_certificate_pdf(student_info, exam_type, percentage, rank):
     buffer.seek(0)
     return buffer.getvalue()
 
-# 📄 Scorecard PDF Generator
 def generate_pdf_scorecard(student_info, filtered_df):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
@@ -432,21 +437,24 @@ def generate_pdf_scorecard(student_info, filtered_df):
     buffer.seek(0)
     return buffer.getvalue()
 
-# Sidebar Navigation
+# 2. Sidebar Navigation & Dual Logo Header
 st.sidebar.title("☰ NAVIGATION")
 selected_lang = st.sidebar.selectbox("🌐 Choose Language / भाषा चुनें:", ["English", "Hindi", "Gujarati"])
 txt = LANG_TEXTS[selected_lang]
 
 menu = st.sidebar.radio("SELECT PORTAL / PAGE:", ["👨‍🎓 PARENT PORTAL", "🖼️ SCHOOL GALLERY", "🏆 BOARD EXAM RESULTS", "⚙️ ADMIN PORTAL"])
 
-# Left Aligned Logo & Header Title
-h_col1, h_col2 = st.columns([1, 6], vertical_alignment="center")
+# Dual Logo & Header Layout
+h_col1, h_col2, h_col3 = st.columns([1.2, 5.6, 1.2], vertical_alignment="center")
 with h_col1:
     if os.path.exists(LOGO_PATH):
-        st.image(LOGO_PATH, width=80)
+        st.image(LOGO_PATH, width=85)
 with h_col2:
     st.markdown("<h2 class='main-title'>PM SHRI JAWAHAR NAVODAYA VIDYALAYA CHHOTAUDEPUR</h2>", unsafe_allow_html=True)
     st.markdown(f"<h4 class='sub-title'>{txt['title']}</h4>", unsafe_allow_html=True)
+with h_col3:
+    if os.path.exists(SEAL_PATH):
+        st.image(SEAL_PATH, width=75)
 
 st.markdown("---")
 
@@ -593,7 +601,6 @@ if menu == "👨‍🎓 PARENT PORTAL":
 
             st.markdown("---")
             
-            # Combined Overall Performance Summary
             st.subheader(txt['combined_title'])
             tot_obtained = filtered_df['Total_Marks'].sum()
             tot_max = filtered_df['Max_Marks'].sum()
@@ -605,7 +612,6 @@ if menu == "👨‍🎓 PARENT PORTAL":
             m3.metric("Combined Maximum Marks", f"{int(tot_max)}")
             m4.metric("Overall Percentage", f"{overall_pct:.2f}%")
 
-            # Multi-Exam Progress Trend Line Graph
             st.markdown("---")
             st.subheader(txt['trend_title'])
             
@@ -631,7 +637,6 @@ if menu == "👨‍🎓 PARENT PORTAL":
                 st.plotly_chart(trend_fig, use_container_width=True)
 
             st.markdown("---")
-            # Subject-wise Comparison Chart
             st.subheader(f"📊 {txt['chart_title']}")
             latest_row = filtered_df.iloc[-1]
             sub_names = [s for s in ALL_SUBJECTS if s in latest_row and pd.notna(latest_row[s])]
@@ -676,20 +681,40 @@ elif menu == "🖼️ SCHOOL GALLERY":
         images_html = "".join([f'<img src="data:image/png;base64,{get_base64_image(os.path.join("photos/gallery", img))}" style="height: 200px; margin-right: 15px; border-radius: 8px; border: 2px solid #1E88E5;">' for img in gallery_files])
         st.markdown(f'<marquee direction="left" scrollamount="7">{images_html}</marquee>', unsafe_allow_html=True)
 
+# 3. Dynamic Board Toppers Section (Class 10 & 12 Tabs)
 elif menu == "🏆 BOARD EXAM RESULTS":
     st.header("🎓 CBSE BOARD TOPPERS HALL OF FAME")
     toppers_data = load_board_toppers()
     if not toppers_data:
-        st.info("No toppers uploaded yet.")
+        st.info("No toppers uploaded yet. Add toppers from Admin Dashboard.")
     else:
-        # 🌟 FIXED HTML RENDER: Valid base64 checking & marquee formatting
-        cards_html = ""
-        for t in toppers_data:
-            img_b64 = get_base64_image(t.get("photo", ""))
-            img_src = f"data:image/png;base64,{img_b64}" if img_b64 else "https://via.placeholder.com/80"
-            cards_html += f"""<div style="display: inline-block; width: 200px; background: #fff; padding: 12px; margin-right: 15px; border-radius: 10px; border: 2px solid #1E88E5; text-align: center; vertical-align: top;"><img src="{img_src}" style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 2px solid #1565C0;"><div style="font-weight: bold; color: #0D47A1; margin-top: 5px;">{t['name']}</div><div style="font-size: 12px; color: #333;">{t['class']} ({t['year']})</div><div style="font-size: 15px; font-weight: bold; color: #2E7D32; background: #E8F5E9; margin-top: 4px; border-radius: 4px; padding: 2px 0;">🏆 {t['percentage']}</div></div>"""
-        
-        st.markdown(f'<marquee direction="left" scrollamount="6" onmouseover="this.stop();" onmouseout="this.start();">{cards_html}</marquee>', unsafe_allow_html=True)
+        tab10, tab12 = st.tabs(["🎓 Class 10 Toppers", "🎓 Class 12 Toppers"])
+
+        def render_topper_marquee(topper_list):
+            if not topper_list:
+                st.info("Is class ke toppers abhi upload nahi hue hain.")
+                return
+            cards_html = ""
+            for t in topper_list:
+                img_b64 = get_base64_image(t.get("photo", ""))
+                img_src = f"data:image/png;base64,{img_b64}" if img_b64 else "https://via.placeholder.com/80"
+                cards_html += f"""
+                <div class="topper-card">
+                    <img src="{img_src}" style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 2px solid #1565C0;">
+                    <div style="font-weight: bold; color: #0D47A1; margin-top: 5px;">{t['name']}</div>
+                    <div style="font-size: 12px; color: #333;">{t['class']} ({t['year']})</div>
+                    <div style="font-size: 15px; font-weight: bold; color: #2E7D32; background: #E8F5E9; margin-top: 4px; border-radius: 4px; padding: 2px 0;">🏆 {t['percentage']}</div>
+                </div>
+                """
+            st.markdown(f'<marquee direction="left" scrollamount="6" onmouseover="this.stop();" onmouseout="this.start();">{cards_html}</marquee>', unsafe_allow_html=True)
+
+        with tab10:
+            t10_list = [t for t in toppers_data if "10" in str(t.get("class", ""))]
+            render_topper_marquee(t10_list)
+
+        with tab12:
+            t12_list = [t for t in toppers_data if "12" in str(t.get("class", ""))]
+            render_topper_marquee(t12_list)
 
 # ==============================================================================
 # ⚙️ ADMIN PORTAL
@@ -718,7 +743,6 @@ elif menu == "⚙️ ADMIN PORTAL":
 
         st.markdown("---")
 
-        # Bulk Result PDF Export
         with st.expander("📦 1. BULK CLASS RESULT PDF EXPORT (ZIP DOWNLOAD)", expanded=False):
             if st.session_state["student_data"] is not None:
                 df_bulk = st.session_state["student_data"]
@@ -750,7 +774,6 @@ elif menu == "⚙️ ADMIN PORTAL":
                             use_container_width=True
                         )
 
-        # Teacher-wise Performance Analytics
         with st.expander("📊 2. TEACHER-WISE PERFORMANCE REPORT", expanded=False):
             if st.session_state["student_data"] is not None:
                 df_t = st.session_state["student_data"]
@@ -779,7 +802,6 @@ elif menu == "⚙️ ADMIN PORTAL":
                 else:
                     st.info("Class_Teacher column data is empty or missing.")
 
-        # Realtime Data Editor
         with st.expander("✏️ 3. EDIT STUDENT DATA & MARKS IN REALTIME", expanded=False):
             if st.session_state["student_data"] is not None:
                 edited_df = st.data_editor(st.session_state["student_data"], num_rows="dynamic", use_container_width=True)
@@ -795,7 +817,6 @@ elif menu == "⚙️ ADMIN PORTAL":
                     sync_df_to_sqlite(edited_df)
                     st.success("✅ Database updated successfully!")
 
-        # Digital Seal & Signatures
         with st.expander("✒️ 4. DIGITAL SEAL & SIGNATURES MANAGEMENT", expanded=False):
             s_col1, s_col2 = st.columns(2)
             with s_col1:
@@ -812,7 +833,6 @@ elif menu == "⚙️ ADMIN PORTAL":
                     Image.open(sign_file).save(SIGN_PATH)
                     st.success("✅ Principal Signature updated!")
 
-        # Gallery Management
         with st.expander("🖼️ 5. SCHOOL GALLERY MANAGEMENT (ADD / REMOVE)", expanded=False):
             gallery_upload = st.file_uploader("Upload Image to Gallery", type=["png", "jpg", "jpeg"], key="gal_upload")
             if st.button("➕ Add Image to Gallery") and gallery_upload:
@@ -834,7 +854,7 @@ elif menu == "⚙️ ADMIN PORTAL":
                             st.success(f"Deleted {g_file}")
                             st.rerun()
 
-        # Board Toppers Management
+        # 4. Admin Module 6: CBSE Toppers Management
         with st.expander("🏆 6. CBSE TOPPERS MANAGEMENT (ADD / REMOVE)", expanded=False):
             st.subheader("Add New Board Topper")
             b_class = st.selectbox("Class", ["Class 10", "Class 12"])
@@ -849,7 +869,7 @@ elif menu == "⚙️ ADMIN PORTAL":
                 toppers.append({"class": b_class, "name": b_name, "percentage": b_percent, "year": b_year, "photo": photo_file})
                 with open(BOARD_TOPPERS_FILE, "w") as f:
                     json.dump(toppers, f)
-                st.success("✅ Board Topper Added!")
+                st.success("✅ Board Topper Added Successfully!")
                 st.rerun()
 
             toppers_list = load_board_toppers()
@@ -873,7 +893,6 @@ elif menu == "⚙️ ADMIN PORTAL":
                             st.success(f"Removed {t['name']}")
                             st.rerun()
 
-        # Branding & Background Manager
         with st.expander("🎨 7. BRANDING & BACKGROUND MANAGEMENT", expanded=False):
             st.subheader("Logo Management")
             up_logo = st.file_uploader("Upload Logo", type=["png", "jpg", "jpeg"], key="logo_up")
@@ -895,16 +914,17 @@ elif menu == "⚙️ ADMIN PORTAL":
                     st.success("✅ Background image removed!")
                     st.rerun()
 
-        # WhatsApp Bulk Link Generator
+        # 4. Admin Module 8: Bulk WhatsApp Notifications
         with st.expander("📲 8. BULK WHATSAPP NOTIFICATIONS", expanded=False):
             if st.session_state["student_data"] is not None:
                 df_notif = st.session_state["student_data"]
                 if 'Mobile_No' in df_notif.columns:
-                    n_cls = st.selectbox("Select Class for Bulk Dispatch", sorted(df_notif['Class'].astype(str).unique()))
+                    n_cls = st.selectbox("Select Class for Bulk Dispatch", sorted(df_notif['Class'].astype(str).unique()), key="wa_cls")
                     filtered_notif = df_notif[df_notif['Class'].astype(str) == str(n_cls)]
                     msg_template = st.text_area("Message Content", "Dear Parent, your child's exam results are live on the portal. Check now!")
                     
                     if st.button("🚀 Generate Bulk WhatsApp Links"):
+                        st.subheader("📲 Click links below to send WhatsApp notification:")
                         for _, row in filtered_notif.iterrows():
                             mob = re.sub(r'[^0-9]', '', str(row['Mobile_No']))
                             if len(mob) >= 10:
@@ -912,11 +932,10 @@ elif menu == "⚙️ ADMIN PORTAL":
                                 msg_body = f"Hello {row['Student_Name']},\n\n{msg_template}\nTotal Score: {row['Total_Marks']} ({row['Percentage']}%)"
                                 encoded_msg = urllib.parse.quote(msg_body)
                                 wa_link = f"https://api.whatsapp.com/send?phone={mob}&text={encoded_msg}"
-                                st.markdown(f"👉 **{row['Student_Name']}** -> [Click to Send WhatsApp Alert]({wa_link})")
+                                st.markdown(f"👉 **{row['Student_Name']}** ({row['Roll_No']}) -> [Click to Send WhatsApp Alert]({wa_link})")
                 else:
                     st.error("Mobile_No column missing in data.")
 
-        # Excel Upload & Database Sync
         with st.expander("📤 9. EXCEL DATA UPLOAD & SQLITE SYNC", expanded=False):
             uploaded_file = st.file_uploader("Upload Excel Sheet (.xlsx)", type=["xlsx", "xls"])
             if st.button("Process & Sync Database") and uploaded_file:
@@ -925,5 +944,12 @@ elif menu == "⚙️ ADMIN PORTAL":
                 st.session_state["student_data"] = process_data_excel(EXCEL_FILE_PATH)
                 st.success("Excel & SQLite Database Successfully Updated!")
 
+# 5. Updated Footer
 st.markdown("---")
-st.markdown("<div style='text-align: center; color: #666;'>© 2026 PM SHRI JNV CHHOTAUDEPUR | All Rights Reserved</div>", unsafe_allow_html=True)
+st.markdown("""
+    <div style='text-align: center; color: #555555; padding: 12px; font-size: 14px;'>
+        <b>PM SHRI JAWAHAR NAVODAYA VIDYALAYA CHHOTAUDEPUR</b><br>
+        © 2026 PM SHRI JNV CHHOTAUDEPUR | Designed & Developed for Academic Excellence<br>
+        <span style='font-size: 12px; color: #888;'>Powered by Streamlit & Python</span>
+    </div>
+""", unsafe_allow_html=True)
