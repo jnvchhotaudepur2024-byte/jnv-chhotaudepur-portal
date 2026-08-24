@@ -22,7 +22,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 st.set_page_config(page_title="PM SHRI JNV CHHOTAUDEPUR - RESULT PORTAL", page_icon="🎓", layout="wide")
 
-# 1. Custom CSS & Mobile Optimization
+# Custom CSS & Mobile Optimization
 st.markdown("""
     <style>
     @media (max-width: 768px) {
@@ -137,6 +137,23 @@ def clean_val(val):
         return ""
     return re.sub(r'[^a-zA-Z0-9]', '', str(val)).lower().strip()
 
+def get_exam_priority(exam_name):
+    """Sequence Priority: Term End > PWT-4 > PWT-3 > Term-1/Half Yearly > PWT-2 > PWT-1"""
+    e = str(exam_name).upper().strip()
+    if 'TERM END' in e or 'ANNUAL' in e or 'FINAL' in e:
+        return 6
+    elif 'PWT-4' in e or 'PWT 4' in e or 'PWT4' in e:
+        return 5
+    elif 'PWT-3' in e or 'PWT 3' in e or 'PWT3' in e:
+        return 4
+    elif 'TERM-1' in e or 'TERM 1' in e or 'HALF YEARLY' in e or 'MID' in e:
+        return 3
+    elif 'PWT-2' in e or 'PWT 2' in e or 'PWT2' in e:
+        return 2
+    elif 'PWT-1' in e or 'PWT 1' in e or 'PWT1' in e:
+        return 1
+    return 0
+
 @st.cache_data
 def get_base64_image(image_path):
     if os.path.exists(image_path):
@@ -144,7 +161,7 @@ def get_base64_image(image_path):
             return base64.b64encode(image_file.read()).decode()
     return None
 
-# Set Dynamic Background
+# Dynamic Background
 encoded_bg = get_base64_image(BG_PATH)
 if encoded_bg:
     st.markdown(
@@ -178,7 +195,7 @@ def get_and_increment_visits():
 
 total_visits = get_and_increment_visits()
 
-# Database Setup & SQLite Handlers
+# SQLite Handlers
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
@@ -437,25 +454,34 @@ def generate_pdf_scorecard(student_info, filtered_df):
     buffer.seek(0)
     return buffer.getvalue()
 
-# 2. Sidebar Navigation & Dual Logo Header
-st.sidebar.title("☰ NAVIGATION")
-selected_lang = st.sidebar.selectbox("🌐 Choose Language / भाषा चुनें:", ["English", "Hindi", "Gujarati"])
-txt = LANG_TEXTS[selected_lang]
 
-menu = st.sidebar.radio("SELECT PORTAL / PAGE:", ["👨‍🎓 PARENT PORTAL", "🖼️ SCHOOL GALLERY", "🏆 BOARD EXAM RESULTS", "⚙️ ADMIN PORTAL"])
-
-# Dual Logo & Header Layout
+# UPDATE 3: Dual Logo Header Layout (Left & Right Both Sides)
 h_col1, h_col2, h_col3 = st.columns([1.2, 5.6, 1.2], vertical_alignment="center")
 with h_col1:
     if os.path.exists(LOGO_PATH):
         st.image(LOGO_PATH, width=85)
 with h_col2:
     st.markdown("<h2 class='main-title'>PM SHRI JAWAHAR NAVODAYA VIDYALAYA CHHOTAUDEPUR</h2>", unsafe_allow_html=True)
-    st.markdown(f"<h4 class='sub-title'>{txt['title']}</h4>", unsafe_allow_html=True)
 with h_col3:
-    if os.path.exists(SEAL_PATH):
-        st.image(SEAL_PATH, width=75)
+    if os.path.exists(LOGO_PATH):
+        st.image(LOGO_PATH, width=85)
 
+st.markdown("---")
+
+# UPDATE 5: Top CBSE Style Navigation Menu Bar
+nav_col1, nav_col2 = st.columns([4, 1.2], vertical_alignment="center")
+with nav_col1:
+    menu = st.radio(
+        "NAVIGATION_MENU",
+        ["👨‍🎓 PARENT PORTAL", "🖼️ SCHOOL GALLERY", "🏆 BOARD EXAM RESULTS", "⚙️ ADMIN PORTAL"],
+        horizontal=True,
+        label_visibility="collapsed"
+    )
+with nav_col2:
+    selected_lang = st.selectbox("🌐 Language / भाषा", ["English", "Hindi", "Gujarati"], label_visibility="collapsed")
+
+txt = LANG_TEXTS[selected_lang]
+st.markdown(f"<h4 class='sub-title'>{txt['title']}</h4>", unsafe_allow_html=True)
 st.markdown("---")
 
 # ==============================================================================
@@ -476,26 +502,30 @@ if menu == "👨‍🎓 PARENT PORTAL":
         unsafe_allow_html=True
     )
     
+    # UPDATE 4: Exam Sequence Priority (Selecting Most Recent Exam in Priority Order)
     if st.session_state["student_data"] is not None:
         df_data = st.session_state["student_data"]
         if not df_data.empty and 'Exam_Type' in df_data.columns:
-            latest_exam = df_data['Exam_Type'].dropna().iloc[-1]
-            latest_df = df_data[df_data['Exam_Type'] == latest_exam].copy()
-            if not latest_df.empty:
-                school_topper = latest_df.sort_values(by='Percentage', ascending=False).iloc[0]
-                ticker_items = [f"🏆 <b>OVERALL SCHOOL TOPPER ({latest_exam}):</b> {school_topper['Student_Name']} (Class {school_topper['Class']}) - {school_topper['Percentage']:.2f}%"]
-                
-                classes = sorted(latest_df['Class'].astype(str).unique())
-                for cls in classes:
-                    cls_toppers = latest_df[latest_df['Class'].astype(str) == cls].sort_values(by='Percentage', ascending=False).head(3)
-                    top_list = [f"{idx+1}. {r['Student_Name']} ({r['Percentage']:.1f}%)" for idx, (_, r) in enumerate(cls_toppers.iterrows())]
-                    ticker_items.append(f"🥇 <b>Class {cls} Top 3:</b> {' | '.join(top_list)}")
+            unique_exams = df_data['Exam_Type'].dropna().unique()
+            if len(unique_exams) > 0:
+                sorted_exams = sorted(unique_exams, key=get_exam_priority, reverse=True)
+                latest_exam = sorted_exams[0]
+                latest_df = df_data[df_data['Exam_Type'] == latest_exam].copy()
+                if not latest_df.empty:
+                    school_topper = latest_df.sort_values(by='Percentage', ascending=False).iloc[0]
+                    ticker_items = [f"🏆 <b>OVERALL SCHOOL TOPPER ({latest_exam}):</b> {school_topper['Student_Name']} (Class {school_topper['Class']}) - {school_topper['Percentage']:.2f}%"]
                     
-                st.markdown(f"""
-                    <div style="background-color: #FFF9C4; border-left: 5px solid #FBC02D; padding: 7px 10px; border-radius: 4px; color: #000; font-size: 15px; margin-bottom: 10px;">
-                        <marquee direction="left" scrollamount="6" behavior="scroll">{" &nbsp;&nbsp;&nbsp; ✦ &nbsp;&nbsp;&nbsp; ".join(ticker_items)}</marquee>
-                    </div>
-                """, unsafe_allow_html=True)
+                    classes = sorted(latest_df['Class'].astype(str).unique())
+                    for cls in classes:
+                        cls_toppers = latest_df[latest_df['Class'].astype(str) == cls].sort_values(by='Percentage', ascending=False).head(3)
+                        top_list = [f"{idx+1}. {r['Student_Name']} ({r['Percentage']:.1f}%)" for idx, (_, r) in enumerate(cls_toppers.iterrows())]
+                        ticker_items.append(f"🥇 <b>Class {cls} Top 3:</b> {' | '.join(top_list)}")
+                        
+                    st.markdown(f"""
+                        <div style="background-color: #FFF9C4; border-left: 5px solid #FBC02D; padding: 7px 10px; border-radius: 4px; color: #000; font-size: 15px; margin-bottom: 10px;">
+                            <marquee direction="left" scrollamount="6" behavior="scroll">{" &nbsp;&nbsp;&nbsp; ✦ &nbsp;&nbsp;&nbsp; ".join(ticker_items)}</marquee>
+                        </div>
+                    """, unsafe_allow_html=True)
 
     st.header(txt['search_lbl'])
     
@@ -681,14 +711,14 @@ elif menu == "🖼️ SCHOOL GALLERY":
         images_html = "".join([f'<img src="data:image/png;base64,{get_base64_image(os.path.join("photos/gallery", img))}" style="height: 200px; margin-right: 15px; border-radius: 8px; border: 2px solid #1E88E5;">' for img in gallery_files])
         st.markdown(f'<marquee direction="left" scrollamount="7">{images_html}</marquee>', unsafe_allow_html=True)
 
-# 3. Dynamic Board Toppers Section (Class 10 & 12 Tabs)
+# UPDATE 1 & 2: Dynamic Board Toppers Section (Class 12 First, Fixed HTML rendering)
 elif menu == "🏆 BOARD EXAM RESULTS":
     st.header("🎓 CBSE BOARD TOPPERS HALL OF FAME")
     toppers_data = load_board_toppers()
     if not toppers_data:
         st.info("No toppers uploaded yet. Add toppers from Admin Dashboard.")
     else:
-        tab10, tab12 = st.tabs(["🎓 Class 10 Toppers", "🎓 Class 12 Toppers"])
+        tab12, tab10 = st.tabs(["🎓 Class 12 Toppers", "🎓 Class 10 Toppers"])
 
         def render_topper_marquee(topper_list):
             if not topper_list:
@@ -698,23 +728,24 @@ elif menu == "🏆 BOARD EXAM RESULTS":
             for t in topper_list:
                 img_b64 = get_base64_image(t.get("photo", ""))
                 img_src = f"data:image/png;base64,{img_b64}" if img_b64 else "https://via.placeholder.com/80"
-                cards_html += f"""
-                <div class="topper-card">
-                    <img src="{img_src}" style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 2px solid #1565C0;">
-                    <div style="font-weight: bold; color: #0D47A1; margin-top: 5px;">{t['name']}</div>
-                    <div style="font-size: 12px; color: #333;">{t['class']} ({t['year']})</div>
-                    <div style="font-size: 15px; font-weight: bold; color: #2E7D32; background: #E8F5E9; margin-top: 4px; border-radius: 4px; padding: 2px 0;">🏆 {t['percentage']}</div>
-                </div>
-                """
+                card = (
+                    f'<div class="topper-card">'
+                    f'<img src="{img_src}" style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 2px solid #1565C0;">'
+                    f'<div style="font-weight: bold; color: #0D47A1; margin-top: 5px;">{t["name"]}</div>'
+                    f'<div style="font-size: 12px; color: #333;">{t["class"]} ({t["year"]})</div>'
+                    f'<div style="font-size: 15px; font-weight: bold; color: #2E7D32; background: #E8F5E9; margin-top: 4px; border-radius: 4px; padding: 2px 0;">🏆 {t["percentage"]}</div>'
+                    f'</div>'
+                )
+                cards_html += card
             st.markdown(f'<marquee direction="left" scrollamount="6" onmouseover="this.stop();" onmouseout="this.start();">{cards_html}</marquee>', unsafe_allow_html=True)
-
-        with tab10:
-            t10_list = [t for t in toppers_data if "10" in str(t.get("class", ""))]
-            render_topper_marquee(t10_list)
 
         with tab12:
             t12_list = [t for t in toppers_data if "12" in str(t.get("class", ""))]
             render_topper_marquee(t12_list)
+
+        with tab10:
+            t10_list = [t for t in toppers_data if "10" in str(t.get("class", ""))]
+            render_topper_marquee(t10_list)
 
 # ==============================================================================
 # ⚙️ ADMIN PORTAL
@@ -854,10 +885,9 @@ elif menu == "⚙️ ADMIN PORTAL":
                             st.success(f"Deleted {g_file}")
                             st.rerun()
 
-        # 4. Admin Module 6: CBSE Toppers Management
         with st.expander("🏆 6. CBSE TOPPERS MANAGEMENT (ADD / REMOVE)", expanded=False):
             st.subheader("Add New Board Topper")
-            b_class = st.selectbox("Class", ["Class 10", "Class 12"])
+            b_class = st.selectbox("Class", ["Class 12", "Class 10"])
             b_name = st.text_input("Name")
             b_percent = st.text_input("Percentage (e.g. 98.4%)")
             b_year = st.text_input("Year", value="2025-26")
@@ -914,7 +944,6 @@ elif menu == "⚙️ ADMIN PORTAL":
                     st.success("✅ Background image removed!")
                     st.rerun()
 
-        # 4. Admin Module 8: Bulk WhatsApp Notifications
         with st.expander("📲 8. BULK WHATSAPP NOTIFICATIONS", expanded=False):
             if st.session_state["student_data"] is not None:
                 df_notif = st.session_state["student_data"]
@@ -944,12 +973,10 @@ elif menu == "⚙️ ADMIN PORTAL":
                 st.session_state["student_data"] = process_data_excel(EXCEL_FILE_PATH)
                 st.success("Excel & SQLite Database Successfully Updated!")
 
-# 5. Updated Footer
+# UPDATE 6: Footer Text Update
 st.markdown("---")
 st.markdown("""
     <div style='text-align: center; color: #555555; padding: 12px; font-size: 14px;'>
-        <b>PM SHRI JAWAHAR NAVODAYA VIDYALAYA CHHOTAUDEPUR</b><br>
-        © 2026 PM SHRI JNV CHHOTAUDEPUR | Designed & Developed for Academic Excellence<br>
-        <span style='font-size: 12px; color: #888;'>Powered by Streamlit & Python</span>
+        <b>© 2026 PM SHRI JNV CHHOTAUDEPUR | Designed & Developed by <i>Anil Chaudhary</i></b>
     </div>
 """, unsafe_allow_html=True)
