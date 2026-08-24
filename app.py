@@ -10,11 +10,13 @@ import base64
 import sqlite3
 import random
 import zipfile
+import hashlib
+import shutil
 from datetime import datetime
 from PIL import Image
 import plotly.graph_objects as go
 
-# ReportLab Imports for PDF, Watermark, Signatures & Certificate Generation
+# ReportLab Imports for PDF, Watermark, Signatures, Borders & Certificate Generation
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage
@@ -22,7 +24,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 st.set_page_config(page_title="PM SHRI JNV CHHOTAUDEPUR - RESULT PORTAL", page_icon="🎓", layout="wide")
 
-# Enhanced Custom CSS & Responsive Mobile Optimization
+# Custom CSS & Responsive Mobile Optimization
 st.markdown("""
     <style>
     @media (max-width: 768px) {
@@ -92,6 +94,13 @@ st.markdown("""
         padding: 12px;
         margin-bottom: 20px;
     }
+    .notice-box {
+        background-color: #E8F5E9;
+        border-left: 5px solid #2E7D32;
+        padding: 10px 15px;
+        border-radius: 5px;
+        margin-bottom: 15px;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -104,12 +113,12 @@ BG_PATH = "photos/system/background.png"
 LOGO_PATH = "photos/system/logo.png"
 SEAL_PATH = "photos/system/seal.png"
 SIGN_PATH = "photos/system/signature.png"
+NOTICES_FILE = "notices.json"
+BOARD_TOPPERS_FILE = "board_toppers.json"
 
-# Credentials & Database Configuration
-try:
-    ADMIN_PASSWORD = st.secrets.get("ADMIN_PASSWORD", os.getenv("ADMIN_PASSWORD", "Jnvcu@me2"))
-except Exception:
-    ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "Jnvcu@me2")
+# Password Hashing & Security Helper
+DEFAULT_PASS = "Jnvcu@me2"
+ADMIN_PASS_HASH = hashlib.sha256(st.secrets.get("ADMIN_PASSWORD", os.getenv("ADMIN_PASSWORD", DEFAULT_PASS)).encode()).hexdigest()
 
 DB_FILE = "school_database.db"
 EXCEL_FILE_PATH = "JNV_Student_Marks.xlsx"
@@ -124,6 +133,7 @@ LANG_TEXTS = {
         "title": "STUDENT PERFORMANCE & RESULT PORTAL",
         "search_lbl": "🔎 CHECK STUDENT RESULT",
         "cert_btn": "🏆 Download Merit Certificate",
+        "admit_btn": "🪪 Download Admit Card",
         "weak_alert": "⚠️ Needs Special Attention in the following subjects (< 33%):",
         "chart_title": "Subject-wise Performance Breakdown",
         "combined_title": "🌟 COMBINED OVERALL PERFORMANCE ACROSS ALL EXAMS",
@@ -133,6 +143,7 @@ LANG_TEXTS = {
         "title": "विद्यार्थी प्रदर्शन एवं परिणाम पोर्टल",
         "search_lbl": "🔎 छात्र परिणाम खोजें",
         "cert_btn": "🏆 योग्यता प्रमाण पत्र (Merit Certificate) डाउनलोड करें",
+        "admit_btn": "🪪 प्रवेश पत्र (Admit Card) डाउनलोड करें",
         "weak_alert": "⚠️ निम्नलिखित विषयों में विशेष ध्यान देने की आवश्यकता है (< 33%):",
         "chart_title": "विषय-वार अंक विश्लेषण",
         "combined_title": "🌟 सभी परीक्षाओं का संयुक्त प्रदर्शन (Combined Performance)",
@@ -142,6 +153,7 @@ LANG_TEXTS = {
         "title": "વિદ્યાર્થી પ્રદર્શન અને પરિણામ પોર્ટલ",
         "search_lbl": "🔎 વિદ્યાર્થીનું પરિણામ જુઓ",
         "cert_btn": "🏆 મેરિટ સર્ટિફિકેટ ડાઉનલોડ કરો",
+        "admit_btn": "🪪 એડમિટ કાર્ડ (Admit Card) ડાઉનલોડ કરો",
         "weak_alert": "⚠️ નીચેના વિષયોમાં વિશેષ ધ્યાન આપવાની જરૂર છે (< 33%):",
         "chart_title": "વિષયવાર ગુણ વિશ્લેષણ ગ્રાફ",
         "combined_title": "🌟 તમામ પરીક્ષાઓનું સંયુક્ત પ્રદર્શન (Combined Performance)",
@@ -158,7 +170,6 @@ def clean_val(val):
     return re.sub(r'[^a-zA-Z0-9]', '', str(val)).lower().strip()
 
 def get_exam_priority(exam_name):
-    """Sequence Priority: Term End > PWT-4 > PWT-3 > Term-1/Half Yearly > PWT-2 > PWT-1"""
     e = str(exam_name).upper().strip()
     if 'TERM END' in e or 'ANNUAL' in e or 'FINAL' in e:
         return 6
@@ -181,7 +192,6 @@ def get_base64_image(image_path):
             return base64.b64encode(image_file.read()).decode()
     return None
 
-# Dynamic Background
 encoded_bg = get_base64_image(BG_PATH)
 if encoded_bg:
     st.markdown(
@@ -215,7 +225,7 @@ def get_and_increment_visits():
 
 total_visits = get_and_increment_visits()
 
-# SQLite Handlers
+# Database Handlers & Auto-Backup Routine
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
@@ -225,7 +235,8 @@ def init_db():
             Class TEXT, Roll_No TEXT, Student_Name TEXT, Father_Name TEXT,
             DOB TEXT, Aadhaar_No TEXT, Mobile_No TEXT, Exam_Type TEXT,
             Max_Marks REAL, Class_Teacher TEXT, Total_Marks REAL,
-            Percentage REAL, Class_Rank INTEGER, Subject_Data TEXT
+            Percentage REAL, Class_Rank INTEGER, Subject_Data TEXT,
+            Attendance TEXT, Discipline TEXT, Remarks TEXT
         )
     ''')
     conn.commit()
@@ -234,22 +245,32 @@ def init_db():
 init_db()
 
 def sync_df_to_sqlite(df):
+    if os.path.exists(DB_FILE):
+        backup_file = f"backups/backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
+        shutil.copyfile(DB_FILE, backup_file)
+    
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     cursor.execute("DELETE FROM student_results")
     for _, row in df.iterrows():
         sub_json = json.dumps({s: row[s] for s in ALL_SUBJECTS if s in row and pd.notna(row[s])})
         cursor.execute('''
-            INSERT INTO student_results (Class, Roll_No, Student_Name, Father_Name, DOB, Aadhaar_No, Mobile_No, Exam_Type, Max_Marks, Class_Teacher, Total_Marks, Percentage, Class_Rank, Subject_Data)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (str(row.get('Class', '')), str(row.get('Roll_No', '')), str(row.get('Student_Name', '')), str(row.get('Father_Name', '')), str(row.get('DOB', '')), str(row.get('Aadhaar_No', '')), str(row.get('Mobile_No', '')), str(row.get('Exam_Type', '')), float(row.get('Max_Marks', 600)), str(row.get('Class_Teacher', '')), float(row.get('Total_Marks', 0)), float(row.get('Percentage', 0)), int(row.get('Class_Rank', 0)), sub_json))
+            INSERT INTO student_results (Class, Roll_No, Student_Name, Father_Name, DOB, Aadhaar_No, Mobile_No, Exam_Type, Max_Marks, Class_Teacher, Total_Marks, Percentage, Class_Rank, Subject_Data, Attendance, Discipline, Remarks)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            str(row.get('Class', '')), str(row.get('Roll_No', '')), str(row.get('Student_Name', '')), str(row.get('Father_Name', '')), 
+            str(row.get('DOB', '')), str(row.get('Aadhaar_No', '')), str(row.get('Mobile_No', '')), str(row.get('Exam_Type', '')), 
+            float(row.get('Max_Marks', 600)), str(row.get('Class_Teacher', '')), float(row.get('Total_Marks', 0)), 
+            float(row.get('Percentage', 0)), int(row.get('Class_Rank', 0)), sub_json,
+            str(row.get('Attendance', '95%')), str(row.get('Discipline', 'A')), str(row.get('Remarks', 'Good Performance'))
+        ))
     conn.commit()
     conn.close()
 
 def load_sqlite_to_df():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    cursor.execute("SELECT Class, Roll_No, Student_Name, Father_Name, DOB, Aadhaar_No, Mobile_No, Exam_Type, Max_Marks, Class_Teacher, Total_Marks, Percentage, Class_Rank, Subject_Data FROM student_results")
+    cursor.execute("SELECT Class, Roll_No, Student_Name, Father_Name, DOB, Aadhaar_No, Mobile_No, Exam_Type, Max_Marks, Class_Teacher, Total_Marks, Percentage, Class_Rank, Subject_Data, Attendance, Discipline, Remarks FROM student_results")
     rows = cursor.fetchall()
     conn.close()
     if not rows:
@@ -261,13 +282,25 @@ def load_sqlite_to_df():
             'Class': r[0], 'Roll_No': r[1], 'Student_Name': r[2], 'Father_Name': r[3],
             'DOB': r[4], 'Aadhaar_No': r[5], 'Mobile_No': r[6], 'Exam_Type': r[7],
             'Max_Marks': r[8], 'Class_Teacher': r[9], 'Total_Marks': r[10],
-            'Percentage': r[11], 'Class_Rank': r[12]
+            'Percentage': r[11], 'Class_Rank': r[12], 'Attendance': r[14],
+            'Discipline': r[15], 'Remarks': r[16]
         }
         sub_dict = json.loads(r[13]) if r[13] else {}
         for sub in ALL_SUBJECTS:
             rec[sub] = sub_dict.get(sub, np.nan)
         records.append(rec)
     return pd.DataFrame(records)
+
+# Notices Helpers
+def load_notices():
+    if os.path.exists(NOTICES_FILE):
+        with open(NOTICES_FILE, "r") as f:
+            return json.load(f)
+    return ["Welcome to the PM SHRI JNV Chhotaudepur Student Portal!"]
+
+def save_notices(notices_list):
+    with open(NOTICES_FILE, "w") as f:
+        json.dump(notices_list, f)
 
 def log_parent_search(roll_no, student_name, selected_class):
     log_file = "result_logs.csv"
@@ -291,10 +324,10 @@ def process_data_excel(excel_file_source):
     else:
         df = pd.read_excel(xls, sheet_name=sheet_names[0])
 
-    meta_cols = ['Class', 'Roll_No', 'Student_Name', 'Father_Name', 'DOB', 'Aadhaar_No', 'Mobile_No', 'Exam_Type', 'Max_Marks', 'Class_Teacher']
+    meta_cols = ['Class', 'Roll_No', 'Student_Name', 'Father_Name', 'DOB', 'Aadhaar_No', 'Mobile_No', 'Exam_Type', 'Max_Marks', 'Class_Teacher', 'Attendance', 'Discipline', 'Remarks']
     for col in meta_cols:
         if col not in df.columns:
-            df[col] = ""
+            df[col] = "95%" if col == 'Attendance' else ("A" if col == 'Discipline' else ("Good" if col == 'Remarks' else ""))
 
     for sub in ALL_SUBJECTS:
         if sub not in df.columns:
@@ -326,27 +359,34 @@ if "student_data" not in st.session_state or st.session_state["student_data"] is
 if "admin_logged_in" not in st.session_state:
     st.session_state["admin_logged_in"] = False
 
-BOARD_TOPPERS_FILE = "board_toppers.json"
 def load_board_toppers():
     if os.path.exists(BOARD_TOPPERS_FILE):
         with open(BOARD_TOPPERS_FILE, "r") as f:
             return json.load(f)
     return []
 
-def create_watermark_callback(watermark_text):
-    def watermark(canvas, doc):
+# ReportLab Decorative Canvas Callbacks
+def create_watermark_callback(watermark_text, with_border=True):
+    def draw_canvas(canvas, doc):
         canvas.saveState()
+        if with_border:
+            canvas.setStrokeColor(colors.HexColor('#1565C0'))
+            canvas.setLineWidth(3)
+            canvas.rect(15, 15, doc.pagesize[0]-30, doc.pagesize[1]-30)
+            canvas.setLineWidth(1)
+            canvas.rect(19, 19, doc.pagesize[0]-38, doc.pagesize[1]-38)
+
         canvas.setFont('Helvetica-Bold', 36)
         canvas.setFillColor(colors.HexColor('#E0E0E0'), alpha=0.25)
         canvas.translate(doc.pagesize[0] / 2.0, doc.pagesize[1] / 2.0)
         canvas.rotate(35)
         canvas.drawCentredString(0, 0, watermark_text)
         canvas.restoreState()
-    return watermark
+    return draw_canvas
 
 def generate_merit_certificate_pdf(student_info, exam_type, percentage, rank):
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
+    doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), rightMargin=35, leftMargin=35, topMargin=35, bottomMargin=35)
     story = []
     styles = getSampleStyleSheet()
 
@@ -356,15 +396,15 @@ def generate_merit_certificate_pdf(student_info, exam_type, percentage, rank):
 
     if os.path.exists(LOGO_PATH):
         try:
-            logo_img = RLImage(LOGO_PATH, width=60, height=60)
+            logo_img = RLImage(LOGO_PATH, width=55, height=55)
             logo_img.hAlign = 'CENTER'
             story.append(logo_img)
-            story.append(Spacer(1, 6))
+            story.append(Spacer(1, 4))
         except Exception:
             pass
 
     story.append(Paragraph("PM SHRI JAWAHAR NAVODAYA VIDYALAYA CHHOTAUDEPUR", cert_title))
-    story.append(Spacer(1, 5))
+    story.append(Spacer(1, 4))
     story.append(Paragraph("🏆 CERTIFICATE OF ACADEMIC EXCELLENCE 🏆", sub_title))
     story.append(Spacer(1, 15))
 
@@ -375,7 +415,7 @@ def generate_merit_certificate_pdf(student_info, exam_type, percentage, rank):
     in the <b>{exam_type}</b> Examination (Academic Year 2025-26).
     """
     story.append(Paragraph(cert_text, body_style))
-    story.append(Spacer(1, 25))
+    story.append(Spacer(1, 20))
 
     seal_element = RLImage(SEAL_PATH, width=50, height=50) if os.path.exists(SEAL_PATH) else Paragraph("<b>[OFFICIAL SEAL]</b>", body_style)
     sign_element = RLImage(SIGN_PATH, width=70, height=35) if os.path.exists(SIGN_PATH) else Paragraph("<b>____________________</b>", body_style)
@@ -384,11 +424,11 @@ def generate_merit_certificate_pdf(student_info, exam_type, percentage, rank):
         [Paragraph("<b>____________________</b>", body_style), seal_element, sign_element],
         [Paragraph("<b>Class Teacher</b>", body_style), Paragraph("<b>School Seal</b>", body_style), Paragraph("<b>Principal Signature</b>", body_style)]
     ]
-    sig_table = Table(sig_data, colWidths=[250, 200, 250])
+    sig_table = Table(sig_data, colWidths=[240, 180, 240])
     sig_table.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
     story.append(sig_table)
 
-    watermark_fn = create_watermark_callback("PM SHRI JNV CHHOTAUDEPUR")
+    watermark_fn = create_watermark_callback("PM SHRI JNV CHHOTAUDEPUR", with_border=True)
     doc.build(story, onFirstPage=watermark_fn, onLaterPages=watermark_fn)
     buffer.seek(0)
     return buffer.getvalue()
@@ -415,12 +455,13 @@ def generate_pdf_scorecard(student_info, filtered_df):
     story.append(Paragraph("PM SHRI JAWAHAR NAVODAYA VIDYALAYA CHHOTAUDEPUR", title_style))
     story.append(Spacer(1, 4))
     story.append(Paragraph("STUDENT ACADEMIC PERFORMANCE REPORT CARD", subtitle_style))
-    story.append(Spacer(1, 10))
+    story.append(Spacer(1, 8))
 
     info_data = [
         [Paragraph(f"<b>Student Name:</b> {student_info['Student_Name']}", normal_style), Paragraph(f"<b>Roll No:</b> {student_info['Roll_No']}", normal_style)],
         [Paragraph(f"<b>Class:</b> {student_info['Class']}", normal_style), Paragraph(f"<b>Class Teacher:</b> {student_info['Class_Teacher']}", normal_style)],
-        [Paragraph(f"<b>Father's Name:</b> {student_info['Father_Name']}", normal_style), Paragraph(f"<b>Aadhaar:</b> [Aadhaar Redacted]", normal_style)]
+        [Paragraph(f"<b>Father's Name:</b> {student_info['Father_Name']}", normal_style), Paragraph(f"<b>Aadhaar:</b> [Aadhaar Redacted]", normal_style)],
+        [Paragraph(f"<b>Attendance:</b> {student_info.get('Attendance', '95%')}", normal_style), Paragraph(f"<b>Discipline Grade:</b> {student_info.get('Discipline', 'A')}", normal_style)]
     ]
     info_table = Table(info_data, colWidths=[260, 260])
     info_table.setStyle(TableStyle([
@@ -430,7 +471,7 @@ def generate_pdf_scorecard(student_info, filtered_df):
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
     ]))
     story.append(info_table)
-    story.append(Spacer(1, 12))
+    story.append(Spacer(1, 10))
 
     for _, row in filtered_df.iterrows():
         exam_header = f"<b>Exam:</b> {row['Exam_Type']} &nbsp;|&nbsp; <b>Score:</b> {int(row['Total_Marks'])}/{int(row['Max_Marks'])} ({row['Percentage']:.2f}%) &nbsp;|&nbsp; <b>Rank:</b> #{row['Class_Rank']}"
@@ -455,7 +496,10 @@ def generate_pdf_scorecard(student_info, filtered_df):
             ('ALIGN', (2, 0), (2, -1), 'CENTER'),
         ]))
         story.append(score_table)
-        story.append(Spacer(1, 10))
+        story.append(Spacer(1, 8))
+
+    story.append(Paragraph(f"<b>Teacher Remarks:</b> {student_info.get('Remarks', 'Keep up the good work!')}", normal_style))
+    story.append(Spacer(1, 10))
 
     seal_element = RLImage(SEAL_PATH, width=45, height=45) if os.path.exists(SEAL_PATH) else Paragraph("<b>[SEAL]</b>", normal_style)
     sign_element = RLImage(SIGN_PATH, width=65, height=30) if os.path.exists(SIGN_PATH) else Paragraph("<b>________________</b>", normal_style)
@@ -466,16 +510,83 @@ def generate_pdf_scorecard(student_info, filtered_df):
     ]
     sig_table = Table(sig_data, colWidths=[180, 160, 180])
     sig_table.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
-    story.append(Spacer(1, 15))
     story.append(sig_table)
 
-    watermark_fn = create_watermark_callback("PM SHRI JNV CHHOTAUDEPUR")
+    watermark_fn = create_watermark_callback("PM SHRI JNV CHHOTAUDEPUR", with_border=True)
+    doc.build(story, onFirstPage=watermark_fn, onLaterPages=watermark_fn)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+def generate_admit_card_pdf(student_info):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
+    story = []
+    styles = getSampleStyleSheet()
+
+    title_style = ParagraphStyle('DocTitle', parent=styles['Heading1'], fontName='Helvetica-Bold', fontSize=16, leading=18, alignment=1, textColor=colors.HexColor('#1565C0'))
+    sub_style = ParagraphStyle('DocSub', parent=styles['Heading2'], fontName='Helvetica-Bold', fontSize=12, leading=14, alignment=1, textColor=colors.HexColor('#2E7D32'))
+    normal_style = styles['Normal']
+
+    if os.path.exists(LOGO_PATH):
+        try:
+            logo_img = RLImage(LOGO_PATH, width=50, height=50)
+            logo_img.hAlign = 'CENTER'
+            story.append(logo_img)
+            story.append(Spacer(1, 4))
+        except Exception:
+            pass
+
+    story.append(Paragraph("PM SHRI JAWAHAR NAVODAYA VIDYALAYA CHHOTAUDEPUR", title_style))
+    story.append(Paragraph("EXAMINATION ADMIT CARD / HALL TICKET (2025-26)", sub_style))
+    story.append(Spacer(1, 10))
+
+    photo_path = f"photos/students/{student_info['Roll_No']}.png"
+    photo_elem = RLImage(photo_path, width=70, height=80) if os.path.exists(photo_path) else Paragraph("<b>[PHOTO]</b>", normal_style)
+
+    info_data = [
+        [Paragraph(f"<b>Student Name:</b> {student_info['Student_Name']}", normal_style), photo_elem],
+        [Paragraph(f"<b>Roll No:</b> {student_info['Roll_No']}", normal_style), ""],
+        [Paragraph(f"<b>Class:</b> {student_info['Class']}", normal_style), ""],
+        [Paragraph(f"<b>Father's Name:</b> {student_info['Father_Name']}", normal_style), ""],
+        [Paragraph(f"<b>Exam Center:</b> JNV Chhotaudepur Main Campus", normal_style), ""]
+    ]
+    t = Table(info_data, colWidths=[380, 120])
+    t.setStyle(TableStyle([
+        ('SPAN', (1, 0), (1, 4)),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#CCCCCC')),
+        ('PADDING', (0,0), (-1,-1), 5)
+    ]))
+    story.append(t)
+    story.append(Spacer(1, 15))
+
+    rules_text = """
+    <b>Exam Instructions:</b><br/>
+    1. Student must carry this Admit Card to the Examination Hall.<br/>
+    2. Electronic devices (Mobile, Smart Watches) are strictly prohibited.<br/>
+    3. Be present in the exam hall 15 minutes before the scheduled time.
+    """
+    story.append(Paragraph(rules_text, normal_style))
+    story.append(Spacer(1, 20))
+
+    seal_element = RLImage(SEAL_PATH, width=45, height=45) if os.path.exists(SEAL_PATH) else Paragraph("<b>[SEAL]</b>", normal_style)
+    sign_element = RLImage(SIGN_PATH, width=65, height=30) if os.path.exists(SIGN_PATH) else Paragraph("<b>________________</b>", normal_style)
+
+    sig_data = [
+        [Paragraph("<b>____________________</b>", normal_style), seal_element, sign_element],
+        [Paragraph("<b>Student Signature</b>", normal_style), Paragraph("<b>School Seal</b>", normal_style), Paragraph("<b>Principal Signature</b>", normal_style)]
+    ]
+    sig_table = Table(sig_data, colWidths=[180, 160, 180])
+    sig_table.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
+    story.append(sig_table)
+
+    watermark_fn = create_watermark_callback("PM SHRI JNV CHHOTAUDEPUR", with_border=True)
     doc.build(story, onFirstPage=watermark_fn, onLaterPages=watermark_fn)
     buffer.seek(0)
     return buffer.getvalue()
 
 
-# Header Layout (Requirement 1 & 7: Space Utilization & Mobile 1 Logo Only)
+# Header Layout
 h_col1, h_col2, h_col3 = st.columns([1.2, 5.6, 1.2], vertical_alignment="center")
 with h_col1:
     if os.path.exists(LOGO_PATH):
@@ -484,7 +595,6 @@ with h_col2:
     st.markdown("<h2 class='main-title'>PM SHRI JAWAHAR NAVODAYA VIDYALAYA CHHOTAUDEPUR</h2>", unsafe_allow_html=True)
 with h_col3:
     if os.path.exists(LOGO_PATH):
-        # Far-right aligned logo, hidden on mobile screens via 'mobile-hide' CSS class
         st.markdown(f'<div class="header-logo-right mobile-hide"><img src="data:image/png;base64,{get_base64_image(LOGO_PATH)}" width="80"></div>', unsafe_allow_html=True)
 
 st.markdown("---")
@@ -505,7 +615,6 @@ txt = LANG_TEXTS[selected_lang]
 st.markdown(f"<h4 class='sub-title'>{txt['title']}</h4>", unsafe_allow_html=True)
 st.markdown("---")
 
-# Helper function to render traveling toppers marquee cards
 def render_topper_marquee(topper_list):
     if not topper_list:
         st.info("Top performers details will be displayed here once available.")
@@ -529,28 +638,23 @@ def render_topper_marquee(topper_list):
 # 👨‍🎓 PARENT PORTAL
 # ==============================================================================
 if menu == "👨‍🎓 PARENT PORTAL":
-    educational_quotes = [
-        "🎓 'Education is the most powerful weapon which you can use to change the world.' – Nelson Mandela",
-        "🌟 'Live as if you were to die tomorrow. Learn as if you were to live forever.' – Mahatma Gandhi",
-        "💡 'The mind is not a vessel to be filled, but a fire to be kindled.' – Plutarch"
-    ]
-    st.markdown(
-        f"""
-        <div style="background: linear-gradient(90deg, #1565C0, #1E88E5); border-radius: 6px; padding: 8px 12px; color: #FFFFFF; font-size: 14px; font-weight: 600; margin-bottom: 15px;">
-            <marquee direction="left" scrollamount="6" behavior="scroll">{" &nbsp;&nbsp;&nbsp;&nbsp; ✦ &nbsp;&nbsp;&nbsp;&nbsp; ".join(educational_quotes)}</marquee>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+    # Dynamic Digital Notice Board
+    notices = load_notices()
+    if notices:
+        st.markdown(f"""
+            <div class="notice-box">
+                <span style="font-weight: bold; color: #1B5E20;">📢 DIGITAL NOTICE BOARD:</span>
+                <marquee direction="left" scrollamount="5" behavior="scroll" style="vertical-align: middle; margin-left: 10px;">
+                    {" &nbsp;&nbsp;&nbsp;&nbsp; 🔹 &nbsp;&nbsp;&nbsp;&nbsp; ".join(notices)}
+                </marquee>
+            </div>
+        """, unsafe_allow_html=True)
 
-    # Requirements 2 & 3: Parent Portal Hall of Fame (Class 12 & Class 10 Traveling Toppers)
+    # Hall of Fame
     st.markdown("<div class='hall-of-fame-box'>", unsafe_allow_html=True)
     st.markdown("<h4 style='text-align: center; color: #0D47A1; margin-bottom: 8px;'>🏆 ACADEMIC HALL OF FAME (SCHOOL TOPPERS) 🏆</h4>", unsafe_allow_html=True)
     
-    # Combined Topper Sources (Board toppers JSON + Current Exam Data Toppers)
     all_toppers_list = load_board_toppers()
-    
-    # Extract Toppers from Current Data if available
     if st.session_state["student_data"] is not None and not st.session_state["student_data"].empty:
         df_top = st.session_state["student_data"]
         for c_val in ['12', '10']:
@@ -575,7 +679,6 @@ if menu == "👨‍🎓 PARENT PORTAL":
         render_topper_marquee(top_10)
     st.markdown("</div>", unsafe_allow_html=True)
     
-    # Exam Sequence Priority Ticker
     if st.session_state["student_data"] is not None:
         df_data = st.session_state["student_data"]
         if not df_data.empty and 'Exam_Type' in df_data.columns:
@@ -677,6 +780,7 @@ if menu == "👨‍🎓 PARENT PORTAL":
             log_parent_search(student_info['Roll_No'], student_info['Student_Name'], student_info['Class'])
             
             pdf_bytes = generate_pdf_scorecard(student_info, filtered_df)
+            admit_bytes = generate_admit_card_pdf(student_info)
 
             st.success(f"🎓 Result Found for: **{student_info['Student_Name']}**")
             
@@ -691,19 +795,21 @@ if menu == "👨‍🎓 PARENT PORTAL":
             with r_col2:
                 st.write(f"**Student:** {student_info['Student_Name']} | **Roll No:** {student_info['Roll_No']}")
                 st.write(f"**Class:** {student_info['Class']} | **Aadhaar:** {mask_aadhaar(student_info['Aadhaar_No'])}")
+                st.write(f"**Attendance:** {student_info.get('Attendance', '95%')} | **Discipline:** Grade {student_info.get('Discipline', 'A')}")
                 
-                b_c1, b_c2 = st.columns(2)
+                b_c1, b_c2, b_c3 = st.columns(3)
                 with b_c1:
-                    st.download_button("📥 Download Report Card (PDF)", data=pdf_bytes, file_name=f"Report_{student_info['Roll_No']}.pdf", mime="application/pdf", use_container_width=True)
+                    st.download_button("📥 Report Card (PDF)", data=pdf_bytes, file_name=f"Report_{student_info['Roll_No']}.pdf", mime="application/pdf", use_container_width=True)
+                with b_c2:
+                    st.download_button(txt['admit_btn'], data=admit_bytes, file_name=f"AdmitCard_{student_info['Roll_No']}.pdf", mime="application/pdf", use_container_width=True)
                 
                 best_row = filtered_df.sort_values('Class_Rank').iloc[0]
                 if best_row['Class_Rank'] <= 3:
-                    with b_c2:
+                    with b_c3:
                         cert_pdf = generate_merit_certificate_pdf(student_info, best_row['Exam_Type'], best_row['Percentage'], best_row['Class_Rank'])
                         st.download_button(txt['cert_btn'], data=cert_pdf, file_name=f"Merit_Certificate_{student_info['Roll_No']}.pdf", mime="application/pdf", use_container_width=True)
 
             st.markdown("---")
-            
             st.subheader(txt['combined_title'])
             tot_obtained = filtered_df['Total_Marks'].sum()
             tot_max = filtered_df['Max_Marks'].sum()
@@ -808,106 +914,140 @@ elif menu == "⚙️ ADMIN PORTAL":
     
     if not st.session_state["admin_logged_in"]:
         with st.form("login_form"):
-            st.subheader("🔐 Admin Login")
+            st.subheader("🔐 Secure Admin Login")
             admin_user = st.text_input("Username")
             admin_pass = st.text_input("Password", type="password")
             if st.form_submit_button("Login"):
-                if admin_user == "admin" and admin_pass == ADMIN_PASSWORD:
+                hashed_input = hashlib.sha256(admin_pass.encode()).hexdigest()
+                if admin_user == "admin" and hashed_input == ADMIN_PASS_HASH:
                     st.session_state["admin_logged_in"] = True
-                    st.success("✅ Logged In!")
+                    st.success("✅ Logged In Successfully!")
                     st.rerun()
                 else:
-                    st.error("❌ Invalid Credentials!")
+                    st.error("❌ Invalid Admin Credentials!")
     else:
-        st.success("🔓 Admin Logged In")
+        st.success("🔓 Admin Logged In (Secure Session Active)")
         if st.button("Logout"):
             st.session_state["admin_logged_in"] = False
             st.rerun()
 
         st.markdown("---")
 
-        with st.expander("📦 1. BULK CLASS RESULT PDF EXPORT (ZIP DOWNLOAD)", expanded=False):
+        with st.expander("📦 1. BULK CLASS RESULT PDF EXPORT & EXCEL MERIT LIST", expanded=False):
             if st.session_state["student_data"] is not None:
                 df_bulk = st.session_state["student_data"]
                 c_col1, c_col2 = st.columns(2)
                 with c_col1:
-                    bulk_cls = st.selectbox("Select Class for Bulk Export", sorted(df_bulk['Class'].astype(str).unique()), key="bulk_cls")
+                    bulk_cls = st.selectbox("Select Class", sorted(df_bulk['Class'].astype(str).unique()), key="bulk_cls")
                 with c_col2:
                     bulk_exam = st.selectbox("Select Exam Type", sorted(df_bulk['Exam_Type'].astype(str).unique()), key="bulk_exam")
 
-                if st.button("🚀 Generate Bulk ZIP File"):
-                    filtered_bulk = df_bulk[(df_bulk['Class'].astype(str) == str(bulk_cls)) & (df_bulk['Exam_Type'] == bulk_exam)]
-                    if filtered_bulk.empty:
-                        st.warning("No records found for this Class and Exam.")
-                    else:
-                        zip_buffer = io.BytesIO()
-                        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-                            for idx, s_row in filtered_bulk.iterrows():
-                                s_df = filtered_bulk[filtered_bulk['Roll_No'] == s_row['Roll_No']]
-                                pdf_data = generate_pdf_scorecard(s_row, s_df)
-                                pdf_filename = f"Class_{bulk_cls}_{s_row['Roll_No']}_{s_row['Student_Name'].replace(' ', '_')}.pdf"
-                                zip_file.writestr(pdf_filename, pdf_data)
-                        
-                        zip_buffer.seek(0)
+                ex_col1, ex_col2 = st.columns(2)
+                with ex_col1:
+                    if st.button("🚀 Generate Bulk ZIP File"):
+                        filtered_bulk = df_bulk[(df_bulk['Class'].astype(str) == str(bulk_cls)) & (df_bulk['Exam_Type'] == bulk_exam)]
+                        if filtered_bulk.empty:
+                            st.warning("No records found.")
+                        else:
+                            zip_buffer = io.BytesIO()
+                            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+                                for idx, s_row in filtered_bulk.iterrows():
+                                    s_df = filtered_bulk[filtered_bulk['Roll_No'] == s_row['Roll_No']]
+                                    pdf_data = generate_pdf_scorecard(s_row, s_df)
+                                    pdf_filename = f"Class_{bulk_cls}_{s_row['Roll_No']}_{s_row['Student_Name'].replace(' ', '_')}.pdf"
+                                    zip_file.writestr(pdf_filename, pdf_data)
+                            zip_buffer.seek(0)
+                            st.download_button(
+                                label=f"📥 Download ZIP (Class {bulk_cls})",
+                                data=zip_buffer,
+                                file_name=f"Class_{bulk_cls}_{bulk_exam}_ReportCards.zip",
+                                mime="application/zip",
+                                use_container_width=True
+                            )
+                with ex_col2:
+                    filtered_bulk_ex = df_bulk[(df_bulk['Class'].astype(str) == str(bulk_cls)) & (df_bulk['Exam_Type'] == bulk_exam)].sort_values('Class_Rank')
+                    if not filtered_bulk_ex.empty:
+                        excel_buffer = io.BytesIO()
+                        with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+                            filtered_bulk_ex.to_excel(writer, sheet_name=f"Class_{bulk_cls}_Merit", index=False)
+                        excel_buffer.seek(0)
                         st.download_button(
-                            label=f"📥 Download Bulk Report Cards ZIP (Class {bulk_cls})",
-                            data=zip_buffer,
-                            file_name=f"Class_{bulk_cls}_{bulk_exam}_ReportCards.zip",
-                            mime="application/zip",
+                            label=f"📊 Export Merit List (Excel)",
+                            data=excel_buffer,
+                            file_name=f"MeritList_Class_{bulk_cls}_{bulk_exam}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                             use_container_width=True
                         )
 
-        with st.expander("📊 2. TEACHER-WISE PERFORMANCE REPORT", expanded=False):
+        with st.expander("📊 2. TEACHER-WISE & ADVANCED SUBJECT ANALYTICS", expanded=False):
             if st.session_state["student_data"] is not None:
                 df_t = st.session_state["student_data"]
-                if 'Class_Teacher' in df_t.columns and not df_t['Class_Teacher'].isnull().all():
-                    teachers = sorted(df_t['Class_Teacher'].dropna().astype(str).unique())
-                    teacher_summary = []
-                    
-                    for t in teachers:
-                        t_df = df_t[df_t['Class_Teacher'].astype(str) == t]
-                        tot_students = len(t_df)
-                        passed_students = len(t_df[t_df['Percentage'] >= 33.0])
-                        pass_pct = (passed_students / tot_students * 100) if tot_students > 0 else 0.0
-                        avg_score = t_df['Percentage'].mean()
-                        
-                        teacher_summary.append({
-                            "Class Teacher": t,
-                            "Class(es) Assigned": ", ".join(t_df['Class'].astype(str).unique()),
-                            "Total Students": tot_students,
-                            "Passed Students": passed_students,
-                            "Pass Percentage (%)": f"{pass_pct:.2f}%",
-                            "Average Class Score (%)": f"{avg_score:.2f}%"
-                        })
-                    
-                    t_summary_df = pd.DataFrame(teacher_summary)
-                    st.dataframe(t_summary_df, hide_index=True, use_container_width=True)
-                else:
-                    st.info("Class_Teacher column data is empty or missing.")
+                t_tab1, t_tab2 = st.tabs(["👩‍🏫 Class Teacher Summary", "📈 Subject-Wise Analytics"])
+                
+                with t_tab1:
+                    if 'Class_Teacher' in df_t.columns and not df_t['Class_Teacher'].isnull().all():
+                        teachers = sorted(df_t['Class_Teacher'].dropna().astype(str).unique())
+                        teacher_summary = []
+                        for t in teachers:
+                            t_df = df_t[df_t['Class_Teacher'].astype(str) == t]
+                            tot_students = len(t_df)
+                            passed_students = len(t_df[t_df['Percentage'] >= 33.0])
+                            pass_pct = (passed_students / tot_students * 100) if tot_students > 0 else 0.0
+                            avg_score = t_df['Percentage'].mean()
+                            teacher_summary.append({
+                                "Class Teacher": t,
+                                "Class(es) Assigned": ", ".join(t_df['Class'].astype(str).unique()),
+                                "Total Students": tot_students,
+                                "Passed Students": passed_students,
+                                "Pass Percentage (%)": f"{pass_pct:.2f}%",
+                                "Average Class Score (%)": f"{avg_score:.2f}%"
+                            })
+                        st.dataframe(pd.DataFrame(teacher_summary), hide_index=True, use_container_width=True)
+                
+                with t_tab2:
+                    sub_stats = []
+                    for s in ALL_SUBJECTS:
+                        if s in df_t.columns and not df_t[s].dropna().empty:
+                            s_data = df_t[s].dropna()
+                            sub_stats.append({
+                                "Subject": s,
+                                "Highest Score": s_data.max(),
+                                "Lowest Score": s_data.min(),
+                                "Average Score": round(s_data.mean(), 2),
+                                "Pass % (>=33)": f"{round((s_data[s_data >= 33].count() / len(s_data)) * 100, 1)}%"
+                            })
+                    st.dataframe(pd.DataFrame(sub_stats), hide_index=True, use_container_width=True)
 
-        # Requirements 4, 5 & 6: Realtime Data Edit, Photo Upload, Rank Modifier & Confirmation Pop-up
-        with st.expander("✏️ 3. EDIT STUDENT DATA & MARKS IN REALTIME", expanded=False):
+        with st.expander("✏️ 3. EDIT STUDENT DATA, RANKS & UPLOAD PHOTOS", expanded=False):
             if st.session_state["student_data"] is not None:
                 st.markdown("##### 📷 Upload Student Photo")
                 up_p_col1, up_p_col2 = st.columns([2, 2])
                 with up_p_col1:
-                    roll_to_photo = st.selectbox("Select Student Roll No for Photo Upload", sorted(st.session_state["student_data"]['Roll_No'].astype(str).unique()), key="photo_roll_sel")
+                    roll_to_photo = st.selectbox("Select Student Roll No", sorted(st.session_state["student_data"]['Roll_No'].astype(str).unique()), key="photo_roll_sel")
                 with up_p_col2:
-                    stu_photo_file = st.file_uploader("Upload Passport Size Photo", type=["png", "jpg", "jpeg"], key="stu_photo_up")
-                    if st.button("🖼️ Save Student Photo"):
+                    stu_photo_file = st.file_uploader("Upload Photo", type=["png", "jpg", "jpeg"], key="stu_photo_up")
+                    if st.button("🖼️ Save Photo"):
                         if stu_photo_file and roll_to_photo:
                             Image.open(stu_photo_file).save(f"photos/students/{roll_to_photo}.png")
-                            st.success(f"✅ Photo uploaded successfully for Roll No: {roll_to_photo}!")
-                        else:
-                            st.error("Select student roll number and photo file.")
+                            st.success(f"✅ Photo uploaded for Roll No: {roll_to_photo}!")
 
                 st.markdown("---")
-                st.markdown("##### 📝 Edit Student Data & Rank (Realtime)")
-                st.caption("Tip: You can modify Marks, Details, and Topper Rank ('Class_Rank') directly in the table below.")
+                st.markdown("##### 📝 Realtime Data & Rank Modifier")
                 
+                r_calc_col1, r_calc_col2 = st.columns([2, 2])
+                with r_calc_col1:
+                    if st.button("🔄 Auto-Recalculate Class Ranks"):
+                        df_mod = st.session_state["student_data"].copy()
+                        df_mod['Total_Marks'] = df_mod[ALL_SUBJECTS].sum(axis=1, skipna=True)
+                        df_mod['Percentage'] = ((df_mod['Total_Marks'] / df_mod['Max_Marks']) * 100).round(2)
+                        df_mod['Class_Rank'] = df_mod.groupby(['Class', 'Exam_Type'])['Total_Marks'].rank(ascending=False, method='min').fillna(0).astype(int)
+                        st.session_state["student_data"] = df_mod
+                        sync_df_to_sqlite(df_mod)
+                        st.success("✅ Class ranks recalculated & saved!")
+                        st.rerun()
+
                 edited_df = st.data_editor(st.session_state["student_data"], num_rows="dynamic", use_container_width=True, key="db_realtime_editor")
 
-                # Requirement 6: Confirmation Dialog Trigger
                 if "show_save_confirm" not in st.session_state:
                     st.session_state["show_save_confirm"] = False
 
@@ -933,10 +1073,30 @@ elif menu == "⚙️ ADMIN PORTAL":
                     with confirm_col2:
                         if st.button("❌ NO, CANCEL", use_container_width=True):
                             st.session_state["show_save_confirm"] = False
-                            st.info("Update cancelled. Data was not saved.")
+                            st.info("Update cancelled.")
                             st.rerun()
 
-        with st.expander("✒️ 4. DIGITAL SEAL & SIGNATURES MANAGEMENT", expanded=False):
+        with st.expander("📢 4. DIGITAL NOTICE BOARD MANAGEMENT", expanded=False):
+            current_notices = load_notices()
+            st.subheader("Add New Notice Announcement")
+            new_notice = st.text_input("Notice Text")
+            if st.button("➕ Post Notice") and new_notice:
+                current_notices.insert(0, new_notice)
+                save_notices(current_notices)
+                st.success("✅ Notice posted!")
+                st.rerun()
+
+            st.markdown("---")
+            st.write("**Active Notices:**")
+            for n_idx, n_text in enumerate(current_notices):
+                nc1, nc2 = st.columns([5, 1])
+                nc1.write(f"🔹 {n_text}")
+                if nc2.button("🗑️ Delete", key=f"del_notice_{n_idx}"):
+                    current_notices.pop(n_idx)
+                    save_notices(current_notices)
+                    st.rerun()
+
+        with st.expander("✒️ 5. DIGITAL SEAL & SIGNATURES MANAGEMENT", expanded=False):
             s_col1, s_col2 = st.columns(2)
             with s_col1:
                 st.subheader("Upload School Stamp / Seal")
@@ -952,7 +1112,7 @@ elif menu == "⚙️ ADMIN PORTAL":
                     Image.open(sign_file).save(SIGN_PATH)
                     st.success("✅ Principal Signature updated!")
 
-        with st.expander("🖼️ 5. SCHOOL GALLERY MANAGEMENT (ADD / REMOVE)", expanded=False):
+        with st.expander("🖼️ 6. SCHOOL GALLERY MANAGEMENT", expanded=False):
             gallery_upload = st.file_uploader("Upload Image to Gallery", type=["png", "jpg", "jpeg"], key="gal_upload")
             if st.button("➕ Add Image to Gallery") and gallery_upload:
                 gal_path = os.path.join("photos/gallery", gallery_upload.name)
@@ -962,7 +1122,7 @@ elif menu == "⚙️ ADMIN PORTAL":
 
             gallery_files = [f for f in os.listdir("photos/gallery") if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
             if gallery_files:
-                st.write("**Current Gallery Photos (Click to Remove):**")
+                st.write("**Current Gallery Photos:**")
                 cols = st.columns(4)
                 for idx, g_file in enumerate(gallery_files):
                     with cols[idx % 4]:
@@ -973,7 +1133,7 @@ elif menu == "⚙️ ADMIN PORTAL":
                             st.success(f"Deleted {g_file}")
                             st.rerun()
 
-        with st.expander("🏆 6. CBSE TOPPERS MANAGEMENT (ADD / REMOVE)", expanded=False):
+        with st.expander("🏆 7. CBSE TOPPERS MANAGEMENT", expanded=False):
             st.subheader("Add New Board Topper")
             b_class = st.selectbox("Class", ["Class 12", "Class 10"])
             b_name = st.text_input("Name")
@@ -987,13 +1147,13 @@ elif menu == "⚙️ ADMIN PORTAL":
                 toppers.append({"class": b_class, "name": b_name, "percentage": b_percent, "year": b_year, "photo": photo_file})
                 with open(BOARD_TOPPERS_FILE, "w") as f:
                     json.dump(toppers, f)
-                st.success("✅ Board Topper Added Successfully!")
+                st.success("✅ Board Topper Added!")
                 st.rerun()
 
             toppers_list = load_board_toppers()
             if toppers_list:
                 st.markdown("---")
-                st.write("**Current Board Toppers (Click to Remove):**")
+                st.write("**Current Board Toppers:**")
                 for idx, t in enumerate(toppers_list):
                     t_col1, t_col2 = st.columns([4, 1])
                     with t_col1:
@@ -1008,10 +1168,9 @@ elif menu == "⚙️ ADMIN PORTAL":
                             toppers_list.pop(idx)
                             with open(BOARD_TOPPERS_FILE, "w") as f:
                                 json.dump(toppers_list, f)
-                            st.success(f"Removed {t['name']}")
                             st.rerun()
 
-        with st.expander("🎨 7. BRANDING & BACKGROUND MANAGEMENT", expanded=False):
+        with st.expander("🎨 8. BRANDING & BACKGROUND MANAGEMENT", expanded=False):
             st.subheader("Logo Management")
             up_logo = st.file_uploader("Upload Logo", type=["png", "jpg", "jpeg"], key="logo_up")
             if st.button("Save Logo") and up_logo:
@@ -1032,16 +1191,15 @@ elif menu == "⚙️ ADMIN PORTAL":
                     st.success("✅ Background image removed!")
                     st.rerun()
 
-        with st.expander("📲 8. BULK WHATSAPP NOTIFICATIONS", expanded=False):
+        with st.expander("📲 9. BULK WHATSAPP NOTIFICATIONS", expanded=False):
             if st.session_state["student_data"] is not None:
                 df_notif = st.session_state["student_data"]
                 if 'Mobile_No' in df_notif.columns:
-                    n_cls = st.selectbox("Select Class for Bulk Dispatch", sorted(df_notif['Class'].astype(str).unique()), key="wa_cls")
+                    n_cls = st.selectbox("Select Class", sorted(df_notif['Class'].astype(str).unique()), key="wa_cls")
                     filtered_notif = df_notif[df_notif['Class'].astype(str) == str(n_cls)]
                     msg_template = st.text_area("Message Content", "Dear Parent, your child's exam results are live on the portal. Check now!")
                     
-                    if st.button("🚀 Generate Bulk WhatsApp Links"):
-                        st.subheader("📲 Click links below to send WhatsApp notification:")
+                    if st.button("🚀 Generate WhatsApp Dispatch Links"):
                         for _, row in filtered_notif.iterrows():
                             mob = re.sub(r'[^0-9]', '', str(row['Mobile_No']))
                             if len(mob) >= 10:
@@ -1051,9 +1209,9 @@ elif menu == "⚙️ ADMIN PORTAL":
                                 wa_link = f"https://api.whatsapp.com/send?phone={mob}&text={encoded_msg}"
                                 st.markdown(f"👉 **{row['Student_Name']}** ({row['Roll_No']}) -> [Click to Send WhatsApp Alert]({wa_link})")
                 else:
-                    st.error("Mobile_No column missing in data.")
+                    st.error("Mobile_No column missing.")
 
-        with st.expander("📤 9. EXCEL DATA UPLOAD & SQLITE SYNC", expanded=False):
+        with st.expander("📤 10. EXCEL DATA UPLOAD & SQLITE SYNC", expanded=False):
             uploaded_file = st.file_uploader("Upload Excel Sheet (.xlsx)", type=["xlsx", "xls"])
             if st.button("Process & Sync Database") and uploaded_file:
                 with open(EXCEL_FILE_PATH, "wb") as f:
