@@ -225,7 +225,7 @@ def get_and_increment_visits():
 
 total_visits = get_and_increment_visits()
 
-# Database Handlers & Auto-Backup Routine
+# Database Handlers with Auto Migration Feature
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
@@ -239,6 +239,19 @@ def init_db():
             Attendance TEXT, Discipline TEXT, Remarks TEXT
         )
     ''')
+    
+    # Auto-Migrate: Check if new columns exist in existing database table
+    cursor.execute("PRAGMA table_info(student_results)")
+    existing_columns = [col[1] for col in cursor.fetchall()]
+    
+    new_cols = [("Attendance", "TEXT"), ("Discipline", "TEXT"), ("Remarks", "TEXT")]
+    for col_name, col_type in new_cols:
+        if col_name not in existing_columns:
+            try:
+                cursor.execute(f"ALTER TABLE student_results ADD COLUMN {col_name} {col_type}")
+            except Exception:
+                pass
+                
     conn.commit()
     conn.close()
 
@@ -270,9 +283,15 @@ def sync_df_to_sqlite(df):
 def load_sqlite_to_df():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    cursor.execute("SELECT Class, Roll_No, Student_Name, Father_Name, DOB, Aadhaar_No, Mobile_No, Exam_Type, Max_Marks, Class_Teacher, Total_Marks, Percentage, Class_Rank, Subject_Data, Attendance, Discipline, Remarks FROM student_results")
-    rows = cursor.fetchall()
+    try:
+        cursor.execute("SELECT Class, Roll_No, Student_Name, Father_Name, DOB, Aadhaar_No, Mobile_No, Exam_Type, Max_Marks, Class_Teacher, Total_Marks, Percentage, Class_Rank, Subject_Data, Attendance, Discipline, Remarks FROM student_results")
+        rows = cursor.fetchall()
+    except sqlite3.OperationalError:
+        conn.close()
+        init_db()
+        return None
     conn.close()
+    
     if not rows:
         return None
     
@@ -282,8 +301,10 @@ def load_sqlite_to_df():
             'Class': r[0], 'Roll_No': r[1], 'Student_Name': r[2], 'Father_Name': r[3],
             'DOB': r[4], 'Aadhaar_No': r[5], 'Mobile_No': r[6], 'Exam_Type': r[7],
             'Max_Marks': r[8], 'Class_Teacher': r[9], 'Total_Marks': r[10],
-            'Percentage': r[11], 'Class_Rank': r[12], 'Attendance': r[14],
-            'Discipline': r[15], 'Remarks': r[16]
+            'Percentage': r[11], 'Class_Rank': r[12], 
+            'Attendance': r[14] if r[14] else '95%',
+            'Discipline': r[15] if r[15] else 'A',
+            'Remarks': r[16] if r[16] else 'Good Performance'
         }
         sub_dict = json.loads(r[13]) if r[13] else {}
         for sub in ALL_SUBJECTS:
