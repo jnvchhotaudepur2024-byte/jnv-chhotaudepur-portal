@@ -125,9 +125,12 @@ ADMIN_PASS_HASH = hashlib.sha256(st.secrets.get("ADMIN_PASSWORD", os.getenv("ADM
 DB_FILE = "school_database.db"
 EXCEL_FILE_PATH = "JNV_Student_Marks.xlsx"
 
+# Dynamic Subject List Covering Classes 6 to 12 (Middle, Secondary & Senior Secondary Streams)
 ALL_SUBJECTS = [
-    'Gujarati', 'Hindi', 'English', 'Mathematics', 
-    'Science', 'Social_Science', 'Physics', 'Chemistry', 'Biology'
+    'Gujarati', 'Hindi', 'English', 'Mathematics', 'Science', 'Social_Science', 
+    'Physics', 'Chemistry', 'Biology', 'Accountancy', 'Business_Studies', 
+    'Economics', 'History', 'Geography', 'Political_Science', 'Computer_Science', 
+    'IP', 'Physical_Education', 'Sanskrit', 'Third_Language'
 ]
 
 LANG_TEXTS = {
@@ -186,7 +189,6 @@ def clean_val(val):
     s = format_clean_number(val)
     return re.sub(r'[^a-zA-Z0-9]', '', s).lower().strip()
 
-# Enhanced DOB Normalizer (Fixes 26.12.2011, 2011-12-26, 26/12/2011 variations)
 def clean_dob_str(val):
     if pd.isna(val) or val is None:
         return ""
@@ -215,11 +217,11 @@ def clean_mobile_for_wa(val):
 
 def get_exam_priority(exam_name):
     e = str(exam_name).upper().strip()
-    if 'TERM END' in e or 'ANNUAL' in e or 'FINAL' in e:
+    if 'TERM END' in e or 'ANNUAL' in e or 'FINAL' in e or 'BOARD' in e:
         return 6
-    elif 'PWT-4' in e or 'PWT 4' in e or 'PWT4' in e:
+    elif 'PWT-4' in e or 'PWT 4' in e or 'PWT4' in e or 'PRE BOARD 2' in e:
         return 5
-    elif 'PWT-3' in e or 'PWT 3' in e or 'PWT3' in e:
+    elif 'PWT-3' in e or 'PWT 3' in e or 'PWT3' in e or 'PRE BOARD 1' in e:
         return 4
     elif 'TERM-1' in e or 'TERM 1' in e or 'HALF YEARLY' in e or 'MID' in e:
         return 3
@@ -228,6 +230,16 @@ def get_exam_priority(exam_name):
     elif 'PWT-1' in e or 'PWT 1' in e or 'PWT1' in e:
         return 1
     return 0
+
+def calculate_grade(pct):
+    if pct >= 91: return 'A1'
+    elif pct >= 81: return 'A2'
+    elif pct >= 71: return 'B1'
+    elif pct >= 61: return 'B2'
+    elif pct >= 51: return 'C1'
+    elif pct >= 41: return 'C2'
+    elif pct >= 33: return 'D'
+    else: return 'E'
 
 @st.cache_data
 def get_base64_image(image_path):
@@ -269,7 +281,7 @@ def get_and_increment_visits():
 
 total_visits = get_and_increment_visits()
 
-# Database Handlers with Auto Migration Feature
+# Database Handlers with Dynamic Subject Schema Migration
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
@@ -283,18 +295,6 @@ def init_db():
             Attendance TEXT, Discipline TEXT, Remarks TEXT
         )
     ''')
-    
-    cursor.execute("PRAGMA table_info(student_results)")
-    existing_columns = [col[1] for col in cursor.fetchall()]
-    
-    new_cols = [("Attendance", "TEXT"), ("Discipline", "TEXT"), ("Remarks", "TEXT")]
-    for col_name, col_type in new_cols:
-        if col_name not in existing_columns:
-            try:
-                cursor.execute(f"ALTER TABLE student_results ADD COLUMN {col_name} {col_type}")
-            except Exception:
-                pass
-                
     conn.commit()
     conn.close()
 
@@ -364,7 +364,6 @@ def load_sqlite_to_df():
         records.append(rec)
     return pd.DataFrame(records)
 
-# Notices Helpers
 def load_notices():
     if os.path.exists(NOTICES_FILE):
         with open(NOTICES_FILE, "r") as f:
@@ -405,10 +404,17 @@ def process_data_excel(excel_file_source):
         if col in df.columns:
             df[col] = df[col].apply(format_clean_number)
 
+    # Detect all active subject columns from excel file dynamically
+    detected_subs = [c for c in df.columns if c not in meta_cols and not c.endswith('_basic')]
+    for sub in detected_subs:
+        if sub not in ALL_SUBJECTS:
+            ALL_SUBJECTS.append(sub)
+
     for sub in ALL_SUBJECTS:
         if sub not in df.columns:
             df[sub] = np.nan
-        df[sub] = pd.to_numeric(df[sub], errors='coerce')
+        else:
+            df[sub] = pd.to_numeric(df[sub], errors='coerce')
 
     df['Total_Marks'] = df[ALL_SUBJECTS].sum(axis=1, skipna=True)
     if 'Max_Marks' not in df.columns or df['Max_Marks'].isnull().all():
@@ -441,7 +447,6 @@ def load_board_toppers():
             return json.load(f)
     return []
 
-# ReportLab Decorative Canvas Callbacks
 def create_watermark_callback(watermark_text, with_border=True):
     def draw_canvas(canvas, doc):
         canvas.saveState()
@@ -488,7 +493,7 @@ def generate_merit_certificate_pdf(student_info, exam_type, percentage, rank):
     This is to proudly certify that <b>{student_info['Student_Name']}</b>, Son/Daughter of <b>{student_info['Father_Name']}</b>, 
     studying in <b>Class {student_info['Class']}</b> (Roll No: <b>{student_info['Roll_No']}</b>), has secured 
     <font color="#1565C0"><b>RANK #{rank}</b></font> with an outstanding score of <b>{percentage:.2f}%</b> 
-    in the <b>{exam_type}</b> Examination (Academic Year 2025-26).
+    in the <b>{exam_type}</b> Examination (Academic Session).
     """
     story.append(Paragraph(cert_text, body_style))
     story.append(Spacer(1, 20))
@@ -613,7 +618,7 @@ def generate_admit_card_pdf(student_info):
             pass
 
     story.append(Paragraph("PM SHRI JAWAHAR NAVODAYA VIDYALAYA CHHOTAUDEPUR", title_style))
-    story.append(Paragraph("EXAMINATION ADMIT CARD / HALL TICKET (2025-26)", sub_style))
+    story.append(Paragraph("EXAMINATION ADMIT CARD / HALL TICKET", sub_style))
     story.append(Spacer(1, 10))
 
     photo_path = f"photos/students/{student_info['Roll_No']}.png"
@@ -661,7 +666,6 @@ def generate_admit_card_pdf(student_info):
     buffer.seek(0)
     return buffer.getvalue()
 
-
 # Header Layout
 h_col1, h_col2, h_col3 = st.columns([1.2, 5.6, 1.2], vertical_alignment="center")
 with h_col1:
@@ -680,7 +684,7 @@ nav_col1, nav_col2 = st.columns([4, 1.2], vertical_alignment="center")
 with nav_col1:
     menu = st.radio(
         "NAVIGATION_MENU",
-        ["👨‍🎓 PARENT PORTAL", "🖼️ SCHOOL GALLERY", "🏆 BOARD EXAM RESULTS", "⚙️ ADMIN PORTAL"],
+        ["👨‍🎓 PARENT PORTAL", "📊 RESULT ANALYSIS", "🖼️ SCHOOL GALLERY", "🏆 BOARD EXAM RESULTS", "⚙️ ADMIN PORTAL"],
         horizontal=True,
         label_visibility="collapsed"
     )
@@ -703,7 +707,7 @@ def render_topper_marquee(topper_list):
             f'<div class="topper-card">'
             f'<img src="{img_src}" style="width: 75px; height: 75px; border-radius: 50%; object-fit: cover; border: 2px solid #1565C0;">'
             f'<div style="font-weight: bold; color: #0D47A1; margin-top: 5px; font-size: 13px;">{t["name"]}</div>'
-            f'<div style="font-size: 11px; color: #333;">Class {t["class"]} ({t.get("year", "2025-26")})</div>'
+            f'<div style="font-size: 11px; color: #333;">Class {t["class"]} ({t.get("year", "Session")})</div>'
             f'<div style="font-size: 14px; font-weight: bold; color: #2E7D32; background: #E8F5E9; margin-top: 4px; border-radius: 4px; padding: 2px 0;">🏆 {t["percentage"]}</div>'
             f'</div>'
         )
@@ -714,7 +718,6 @@ def render_topper_marquee(topper_list):
 # 👨‍🎓 PARENT PORTAL
 # ==============================================================================
 if menu == "👨‍🎓 PARENT PORTAL":
-    # Dynamic Digital Notice Board
     notices = load_notices()
     if notices:
         st.markdown(f"""
@@ -726,7 +729,6 @@ if menu == "👨‍🎓 PARENT PORTAL":
             </div>
         """, unsafe_allow_html=True)
 
-    # Hall of Fame
     st.markdown("<div class='hall-of-fame-box'>", unsafe_allow_html=True)
     st.markdown("<h4 style='text-align: center; color: #0D47A1; margin-bottom: 8px;'>🏆 ACADEMIC HALL OF FAME (SCHOOL TOPPERS) 🏆</h4>", unsafe_allow_html=True)
     
@@ -932,7 +934,7 @@ if menu == "👨‍🎓 PARENT PORTAL":
 
             fig = go.Figure()
             fig.add_trace(go.Bar(x=sub_names, y=sub_marks, name="Student Score", marker_color='#1E88E5', text=sub_marks, textposition='auto'))
-            fig.add_trace(go.Bar(x=sub_names, y=class_avgs, name="Class Average", marker_color='#FFA726', text=[f"{v:.1f}" for v in class_avgs], textposition='auto'))
+            fig.add_trace(go.Bar(x=sub_names, y=class_avgs, name="Class Average", marker_color='#FFA726', text=[f"{v:.1f}" if pd.notna(v) else "0" for v in class_avgs], textposition='auto'))
             
             fig.update_layout(barmode='group', title=f"Marks Comparison vs Class Average ({latest_row['Exam_Type']})", xaxis_title="Subjects", yaxis_title="Marks", yaxis=dict(range=[0, 100]))
             st.plotly_chart(fig, use_container_width=True)
@@ -948,13 +950,96 @@ if menu == "👨‍🎓 PARENT PORTAL":
                     subject_rows = []
                     s_no = 1
                     for sub_name in ALL_SUBJECTS:
-                        if pd.notna(row[sub_name]):
+                        if sub_name in row and pd.notna(row[sub_name]):
                             val = row[sub_name]
                             subject_rows.append({'S.No.': s_no, 'Subject Name': sub_name, 'Marks Obtained': int(val) if float(val).is_integer() else val})
                             s_no += 1
                     st.dataframe(pd.DataFrame(subject_rows), hide_index=True, use_container_width=True)
         elif submit_btn:
-            st.error("❌ No student record found matching the provided Class, Roll Number, and Credentials. Kripya details re-check karein.")
+            st.error("❌ No student record found matching the provided Class, Roll Number, and Credentials.")
+
+# ==============================================================================
+# 📊 RESULT ANALYSIS (EXAM-WISE & CUMULATIVE CLASS 6 TO 12)
+# ==============================================================================
+elif menu == "📊 RESULT ANALYSIS":
+    st.header("📈 CLASS & SUBJECT RESULT ANALYSIS (CLASS 6 TO 12)")
+    if st.session_state["student_data"] is None or st.session_state["student_data"].empty:
+        st.warning("⚠️ No student data available for analysis. Please upload data via Admin Portal.")
+    else:
+        df_a = st.session_state["student_data"].copy()
+        
+        ac1, ac2 = st.columns(2)
+        with ac1:
+            sel_class_a = st.selectbox("Select Class Level", sorted(df_a['Class'].astype(str).unique()), key="analysis_cls_sel")
+        with ac2:
+            all_exams = list(df_a['Exam_Type'].dropna().unique())
+            analysis_mode = st.selectbox("Select Analysis Type", ["Cumulative (All Exams Combined)"] + [f"Exam-Wise: {e}" for e in all_exams], key="analysis_mode_sel")
+
+        class_df_a = df_a[df_a['Class'].astype(str) == str(sel_class_a)]
+        
+        if analysis_mode != "Cumulative (All Exams Combined)":
+            selected_exam = analysis_mode.replace("Exam-Wise: ", "")
+            analysis_df = class_df_a[class_df_a['Exam_Type'] == selected_exam]
+        else:
+            # Aggregate cumulative metrics per student across all exams
+            analysis_df = class_df_a.groupby(['Roll_No', 'Student_Name', 'Class']).agg({
+                'Total_Marks': 'sum',
+                'Max_Marks': 'sum'
+            }).reset_index()
+            analysis_df['Percentage'] = (analysis_df['Total_Marks'] / analysis_df['Max_Marks']) * 100
+            analysis_df['Percentage'] = analysis_df['Percentage'].round(2)
+            analysis_df['Class_Rank'] = analysis_df['Total_Marks'].rank(ascending=False, method='min').fillna(0).astype(int)
+
+        if analysis_df.empty:
+            st.info("No record found for selected configuration.")
+        else:
+            tot_students = len(analysis_df)
+            passed = len(analysis_df[analysis_df['Percentage'] >= 33.0])
+            pass_pct = (passed / tot_students * 100) if tot_students > 0 else 0
+            avg_pct = analysis_df['Percentage'].mean()
+            highest_pct = analysis_df['Percentage'].max()
+
+            k1, k2, k3, k4 = st.columns(4)
+            k1.metric("Total Students Analyzed", tot_students)
+            k2.metric("Overall Pass Percentage", f"{pass_pct:.1f}%")
+            k3.metric("Class Average Score", f"{avg_pct:.2f}%")
+            k4.metric("Class Highest Score", f"{highest_pct:.2f}%")
+
+            st.markdown("---")
+            st.subheader("🥇 Class Merit & Top Performers")
+            toppers_df = analysis_df.sort_values(by='Percentage', ascending=False).head(5)
+            st.dataframe(toppers_df[['Class_Rank', 'Roll_No', 'Student_Name', 'Total_Marks', 'Max_Marks', 'Percentage']], hide_index=True, use_container_width=True)
+
+            st.markdown("---")
+            st.subheader("📊 Grade Distribution Breakdown")
+            grades = [calculate_grade(p) for p in analysis_df['Percentage']]
+            grade_counts = pd.Series(grades).value_counts().reindex(['A1', 'A2', 'B1', 'B2', 'C1', 'C2', 'D', 'E'], fill_value=0)
+            
+            fig_grade = go.Figure(data=[go.Bar(x=grade_counts.index, y=grade_counts.values, marker_color='#2E7D32', text=grade_counts.values, textposition='auto')])
+            fig_grade.update_layout(title="CBSE/NVS Grade Distribution (Overall %)", xaxis_title="Grade Category", yaxis_title="Number of Students")
+            st.plotly_chart(fig_grade, use_container_width=True)
+
+            if analysis_mode != "Cumulative (All Exams Combined)":
+                st.markdown("---")
+                st.subheader("📚 Subject-wise Detailed Breakdown")
+                active_subs = [s for s in ALL_SUBJECTS if s in analysis_df.columns and not analysis_df[s].dropna().empty]
+                
+                sub_summary = []
+                for s in active_subs:
+                    s_series = analysis_df[s].dropna()
+                    if not s_series.empty:
+                        s_pass = len(s_series[s_series >= 33.0])
+                        s_pass_pct = (s_pass / len(s_series) * 100)
+                        sub_summary.append({
+                            "Subject": s,
+                            "Appeared": len(s_series),
+                            "Highest": s_series.max(),
+                            "Lowest": s_series.min(),
+                            "Average": round(s_series.mean(), 2),
+                            "Pass Count": s_pass,
+                            "Pass %": f"{s_pass_pct:.1f}%"
+                        })
+                st.dataframe(pd.DataFrame(sub_summary), hide_index=True, use_container_width=True)
 
 # ==============================================================================
 # 🖼️ GALLERY & BOARD RESULTS
@@ -1110,7 +1195,6 @@ elif menu == "⚙️ ADMIN PORTAL":
                             st.success(f"✅ Photo uploaded for Roll No: {roll_to_photo}!")
 
                 st.markdown("---")
-                # NEW FEATURE 4: BULK STUDENT PHOTO UPLOAD (ZIP EXTRACTOR)
                 st.markdown("##### 📦 Bulk Student Photo Upload (ZIP Extractor)")
                 st.info("Upload a `.zip` file containing images named by Roll Number (e.g., `101.png`, `102.jpg`).")
                 zip_photo_file = st.file_uploader("Upload Photos Archive (.zip)", type=["zip"], key="zip_photos_up")
@@ -1243,7 +1327,7 @@ elif menu == "⚙️ ADMIN PORTAL":
             b_class = st.selectbox("Class", ["Class 12", "Class 10"])
             b_name = st.text_input("Name")
             b_percent = st.text_input("Percentage (e.g. 98.4%)")
-            b_year = st.text_input("Year", value="2025-26")
+            b_year = st.text_input("Year", value="Session")
             b_photo = st.file_uploader("Photo", type=["jpg", "png", "jpeg"])
             if st.button("Add Board Topper") and b_name and b_photo:
                 photo_file = f"photos/board/{b_class.replace(' ', '_')}_{clean_val(b_name)}.png"
@@ -1296,7 +1380,6 @@ elif menu == "⚙️ ADMIN PORTAL":
                     st.success("✅ Background image removed!")
                     st.rerun()
 
-        # UPDATED FEATURE 3: AUTOMATED WHATSAPP API & MANUAL LINK GENERATOR
         with st.expander("📲 9. AUTOMATED WHATSAPP API & NOTIFICATIONS", expanded=False):
             if st.session_state["student_data"] is not None:
                 df_notif = st.session_state["student_data"]
@@ -1322,7 +1405,6 @@ elif menu == "⚙️ ADMIN PORTAL":
                                     try:
                                         payload = {"To": f"whatsapp:+{mob}", "From": f"whatsapp:{sender_id}", "Body": msg_body}
                                         headers = {"Authorization": f"Bearer {api_token}"}
-                                        # Background API dispatch call
                                         res = requests.post(api_endpoint, data=payload, headers=headers, timeout=5)
                                         sent_count += 1
                                     except Exception:
@@ -1348,7 +1430,6 @@ elif menu == "⚙️ ADMIN PORTAL":
                 st.session_state["student_data"] = process_data_excel(EXCEL_FILE_PATH)
                 st.success("Excel & SQLite Database Successfully Updated!")
 
-        # NEW FEATURE 1: AUDIT LOG VIEWER IN ADMIN UI
         with st.expander("📋 11. AUDIT LOG VIEWER (PARENT SEARCH LOGS)", expanded=False):
             if os.path.exists(LOG_FILE):
                 log_df = pd.read_csv(LOG_FILE)
@@ -1373,7 +1454,6 @@ elif menu == "⚙️ ADMIN PORTAL":
             else:
                 st.info("ℹ️ No parent search logs recorded yet.")
 
-        # NEW FEATURE 2: DATABASE BACKUP & RESTORE MANAGER
         with st.expander("🗄️ 12. DATABASE BACKUP & RESTORE MANAGER", expanded=False):
             b_col1, b_col2 = st.columns(2)
             with b_col1:
@@ -1408,6 +1488,6 @@ elif menu == "⚙️ ADMIN PORTAL":
 st.markdown("---")
 st.markdown("""
     <div style='text-align: center; color: #555555; padding: 12px; font-size: 14px;'>
-        <b>© 2026 PM SHRI JNV CHHOTAUDEPUR | Designed & Developed by <i>Anil Chaudhary</i></b>
+        <b>PM SHRI JNV CHHOTAUDEPUR | Designed & Developed for Result Analysis (Classes 6 to 12)</b>
     </div>
 """, unsafe_allow_html=True)
