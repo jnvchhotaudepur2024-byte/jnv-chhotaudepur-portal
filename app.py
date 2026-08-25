@@ -164,13 +164,32 @@ LANG_TEXTS = {
 def mask_aadhaar(val):
     return "[Aadhaar Redacted]"
 
-def clean_val(val):
+def format_clean_number(val):
     if pd.isna(val) or val is None:
         return ""
-    s = str(val).strip()
-    if s.endswith('.0'):
-        s = s[:-2]
+    val_str = str(val).strip()
+    if not val_str:
+        return ""
+    try:
+        f = float(val_str)
+        if f.is_integer():
+            return str(int(f))
+    except (ValueError, TypeError):
+        pass
+    if '.' in val_str:
+        val_str = val_str.split('.')[0]
+    return val_str
+
+def clean_val(val):
+    s = format_clean_number(val)
     return re.sub(r'[^a-zA-Z0-9]', '', s).lower().strip()
+
+def clean_mobile_for_wa(val):
+    s = format_clean_number(val)
+    digits = re.sub(r'[^0-9]', '', s)
+    if len(digits) >= 10:
+        return "91" + digits[-10:]
+    return digits
 
 def get_exam_priority(exam_name):
     e = str(exam_name).upper().strip()
@@ -243,7 +262,6 @@ def init_db():
         )
     ''')
     
-    # Auto-Migrate: Check if new columns exist in existing database table
     cursor.execute("PRAGMA table_info(student_results)")
     existing_columns = [col[1] for col in cursor.fetchall()]
     
@@ -274,8 +292,8 @@ def sync_df_to_sqlite(df):
             INSERT INTO student_results (Class, Roll_No, Student_Name, Father_Name, DOB, Aadhaar_No, Mobile_No, Exam_Type, Max_Marks, Class_Teacher, Total_Marks, Percentage, Class_Rank, Subject_Data, Attendance, Discipline, Remarks)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
-            str(row.get('Class', '')), str(row.get('Roll_No', '')), str(row.get('Student_Name', '')), str(row.get('Father_Name', '')), 
-            str(row.get('DOB', '')), str(row.get('Aadhaar_No', '')), str(row.get('Mobile_No', '')), str(row.get('Exam_Type', '')), 
+            str(row.get('Class', '')), format_clean_number(row.get('Roll_No', '')), str(row.get('Student_Name', '')), str(row.get('Father_Name', '')), 
+            str(row.get('DOB', '')), format_clean_number(row.get('Aadhaar_No', '')), format_clean_number(row.get('Mobile_No', '')), str(row.get('Exam_Type', '')), 
             float(row.get('Max_Marks', 600)), str(row.get('Class_Teacher', '')), float(row.get('Total_Marks', 0)), 
             float(row.get('Percentage', 0)), int(row.get('Class_Rank', 0)), sub_json,
             str(row.get('Attendance', '95%')), str(row.get('Discipline', 'A')), str(row.get('Remarks', 'Good Performance'))
@@ -301,10 +319,19 @@ def load_sqlite_to_df():
     records = []
     for r in rows:
         rec = {
-            'Class': r[0], 'Roll_No': r[1], 'Student_Name': r[2], 'Father_Name': r[3],
-            'DOB': r[4], 'Aadhaar_No': r[5], 'Mobile_No': r[6], 'Exam_Type': r[7],
-            'Max_Marks': r[8], 'Class_Teacher': r[9], 'Total_Marks': r[10],
-            'Percentage': r[11], 'Class_Rank': r[12], 
+            'Class': r[0], 
+            'Roll_No': format_clean_number(r[1]), 
+            'Student_Name': r[2], 
+            'Father_Name': r[3],
+            'DOB': r[4], 
+            'Aadhaar_No': format_clean_number(r[5]), 
+            'Mobile_No': format_clean_number(r[6]), 
+            'Exam_Type': r[7],
+            'Max_Marks': r[8], 
+            'Class_Teacher': r[9], 
+            'Total_Marks': r[10],
+            'Percentage': r[11], 
+            'Class_Rank': r[12], 
             'Attendance': r[14] if r[14] else '95%',
             'Discipline': r[15] if r[15] else 'A',
             'Remarks': r[16] if r[16] else 'Good Performance'
@@ -352,6 +379,10 @@ def process_data_excel(excel_file_source):
     for col in meta_cols:
         if col not in df.columns:
             df[col] = "95%" if col == 'Attendance' else ("A" if col == 'Discipline' else ("Good" if col == 'Remarks' else ""))
+
+    for col in ['Roll_No', 'Aadhaar_No', 'Mobile_No']:
+        if col in df.columns:
+            df[col] = df[col].apply(format_clean_number)
 
     for sub in ALL_SUBJECTS:
         if sub not in df.columns:
@@ -764,7 +795,7 @@ if menu == "👨‍🎓 PARENT PORTAL":
                 if "current_otp" in st.session_state and user_otp == st.session_state["current_otp"]:
                     filtered_df = df[
                         (df['Class'].astype(str).str.strip().str.lower() == selected_class.strip().lower()) &
-                        (df['Roll_No'].astype(str).str.strip() == roll_no.strip()) &
+                        (df['Roll_No'].apply(clean_val) == clean_val(roll_no)) &
                         (df['Mobile_No'].apply(clean_val) == clean_val(mobile_input))
                     ]
                 else:
@@ -789,13 +820,13 @@ if menu == "👨‍🎓 PARENT PORTAL":
                 if "Option 1" in search_method:
                     filtered_df = df[
                         (df['Class'].astype(str).str.strip().str.lower() == selected_class.strip().lower()) &
-                        (df['Roll_No'].astype(str).str.strip() == roll_no.strip()) &
+                        (df['Roll_No'].apply(clean_val) == clean_val(roll_no)) &
                         (df['DOB'].apply(clean_val) == clean_val(dob_input))
                     ]
                 else:
                     filtered_df = df[
                         (df['Class'].astype(str).str.strip().str.lower() == selected_class.strip().lower()) &
-                        (df['Roll_No'].astype(str).str.strip() == roll_no.strip()) &
+                        (df['Roll_No'].apply(clean_val) == clean_val(roll_no)) &
                         (df['Aadhaar_No'].apply(clean_val) == clean_val(aadhaar_input))
                     ]
             
@@ -1225,12 +1256,8 @@ elif menu == "⚙️ ADMIN PORTAL":
                     
                     if st.button("🚀 Generate WhatsApp Dispatch Links"):
                         for _, row in filtered_notif.iterrows():
-                            mob_raw = str(row['Mobile_No']).strip()
-                            if mob_raw.endswith('.0'):
-                                mob_raw = mob_raw[:-2]
-                            mob = re.sub(r'[^0-9]', '', mob_raw)
+                            mob = clean_mobile_for_wa(row['Mobile_No'])
                             if len(mob) >= 10:
-                                mob = "91" + mob[-10:]
                                 msg_body = f"Hello {row['Student_Name']},\n\n{msg_template}\nTotal Score: {row['Total_Marks']} ({row['Percentage']}%)"
                                 encoded_msg = urllib.parse.quote(msg_body)
                                 wa_link = f"https://api.whatsapp.com/send?phone={mob}&text={encoded_msg}"
