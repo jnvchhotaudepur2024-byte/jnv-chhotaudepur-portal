@@ -112,11 +112,24 @@ for folder in ["photos/students", "photos/gallery", "photos/board", "photos/syst
 # System Image Paths
 BG_PATH = "photos/system/background.png"
 LOGO_PATH = "photos/system/logo.png"
+CBSE_LOGO_PATH = "photos/system/cbse_logo.png"
 SEAL_PATH = "photos/system/seal.png"
 SIGN_PATH = "photos/system/signature.png"
 NOTICES_FILE = "notices.json"
 BOARD_TOPPERS_FILE = "board_toppers.json"
 LOG_FILE = "result_logs.csv"
+
+# Session State Initialization for Signature & Stamp Offsets
+if "sig_width" not in st.session_state:
+    st.session_state["sig_width"] = 80
+if "sig_height" not in st.session_state:
+    st.session_state["sig_height"] = 35
+if "seal_width" not in st.session_state:
+    st.session_state["seal_width"] = 55
+if "seal_height" not in st.session_state:
+    st.session_state["seal_height"] = 55
+if "sig_y_offset" not in st.session_state:
+    st.session_state["sig_y_offset"] = 0
 
 # Password Hashing & Security Helper
 DEFAULT_PASS = "Jnvcu@me2"
@@ -186,7 +199,6 @@ def clean_val(val):
     s = format_clean_number(val)
     return re.sub(r'[^a-zA-Z0-9]', '', s).lower().strip()
 
-# Enhanced DOB Normalizer (Fixes 26.12.2011, 2011-12-26, 26/12/2011 variations)
 def clean_dob_str(val):
     if pd.isna(val) or val is None:
         return ""
@@ -212,6 +224,26 @@ def clean_mobile_for_wa(val):
     if len(digits) >= 10:
         return "91" + digits[-10:]
     return digits
+
+def calculate_grade(pct):
+    if pct is None or np.isnan(pct):
+        return "-"
+    if pct >= 91:
+        return "A1"
+    elif pct >= 81:
+        return "A2"
+    elif pct >= 71:
+        return "B1"
+    elif pct >= 61:
+        return "B2"
+    elif pct >= 51:
+        return "C1"
+    elif pct >= 41:
+        return "C2"
+    elif pct >= 33:
+        return "D"
+    else:
+        return "E"
 
 def get_exam_priority(exam_name):
     e = str(exam_name).upper().strip()
@@ -269,25 +301,25 @@ def get_and_increment_visits():
 
 total_visits = get_and_increment_visits()
 
-# Database Handlers with Auto Migration Feature
+# Database Handlers
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS student_results (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            Class TEXT, Roll_No TEXT, Student_Name TEXT, Father_Name TEXT,
+            Class TEXT, Roll_No TEXT, Student_Name TEXT, Father_Name TEXT, Mother_Name TEXT,
             DOB TEXT, Aadhaar_No TEXT, Mobile_No TEXT, Exam_Type TEXT,
             Max_Marks REAL, Class_Teacher TEXT, Total_Marks REAL,
             Percentage REAL, Class_Rank INTEGER, Subject_Data TEXT,
-            Attendance TEXT, Discipline TEXT, Remarks TEXT
+            Attendance TEXT, Discipline TEXT, Remarks TEXT, School_Name TEXT
         )
     ''')
     
     cursor.execute("PRAGMA table_info(student_results)")
     existing_columns = [col[1] for col in cursor.fetchall()]
     
-    new_cols = [("Attendance", "TEXT"), ("Discipline", "TEXT"), ("Remarks", "TEXT")]
+    new_cols = [("Attendance", "TEXT"), ("Discipline", "TEXT"), ("Remarks", "TEXT"), ("Mother_Name", "TEXT"), ("School_Name", "TEXT")]
     for col_name, col_type in new_cols:
         if col_name not in existing_columns:
             try:
@@ -311,14 +343,15 @@ def sync_df_to_sqlite(df):
     for _, row in df.iterrows():
         sub_json = json.dumps({s: row[s] for s in ALL_SUBJECTS if s in row and pd.notna(row[s])})
         cursor.execute('''
-            INSERT INTO student_results (Class, Roll_No, Student_Name, Father_Name, DOB, Aadhaar_No, Mobile_No, Exam_Type, Max_Marks, Class_Teacher, Total_Marks, Percentage, Class_Rank, Subject_Data, Attendance, Discipline, Remarks)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO student_results (Class, Roll_No, Student_Name, Father_Name, Mother_Name, DOB, Aadhaar_No, Mobile_No, Exam_Type, Max_Marks, Class_Teacher, Total_Marks, Percentage, Class_Rank, Subject_Data, Attendance, Discipline, Remarks, School_Name)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
-            str(row.get('Class', '')), format_clean_number(row.get('Roll_No', '')), str(row.get('Student_Name', '')), str(row.get('Father_Name', '')), 
+            str(row.get('Class', '')), format_clean_number(row.get('Roll_No', '')), str(row.get('Student_Name', '')), str(row.get('Father_Name', '')), str(row.get('Mother_Name', '')),
             str(row.get('DOB', '')), format_clean_number(row.get('Aadhaar_No', '')), format_clean_number(row.get('Mobile_No', '')), str(row.get('Exam_Type', '')), 
             float(row.get('Max_Marks', 600)), str(row.get('Class_Teacher', '')), float(row.get('Total_Marks', 0)), 
             float(row.get('Percentage', 0)), int(row.get('Class_Rank', 0)), sub_json,
-            str(row.get('Attendance', '95%')), str(row.get('Discipline', 'A')), str(row.get('Remarks', 'Good Performance'))
+            str(row.get('Attendance', '95%')), str(row.get('Discipline', 'A')), str(row.get('Remarks', 'Good Performance')),
+            str(row.get('School_Name', 'PM SHRI JAWAHAR NAVODAYA VIDYALAYA CHHOTAUDEPUR'))
         ))
     conn.commit()
     conn.close()
@@ -327,7 +360,7 @@ def load_sqlite_to_df():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT Class, Roll_No, Student_Name, Father_Name, DOB, Aadhaar_No, Mobile_No, Exam_Type, Max_Marks, Class_Teacher, Total_Marks, Percentage, Class_Rank, Subject_Data, Attendance, Discipline, Remarks FROM student_results")
+        cursor.execute("SELECT Class, Roll_No, Student_Name, Father_Name, DOB, Aadhaar_No, Mobile_No, Exam_Type, Max_Marks, Class_Teacher, Total_Marks, Percentage, Class_Rank, Subject_Data, Attendance, Discipline, Remarks, Mother_Name, School_Name FROM student_results")
         rows = cursor.fetchall()
     except sqlite3.OperationalError:
         conn.close()
@@ -356,7 +389,9 @@ def load_sqlite_to_df():
             'Class_Rank': r[12], 
             'Attendance': r[14] if r[14] else '95%',
             'Discipline': r[15] if r[15] else 'A',
-            'Remarks': r[16] if r[16] else 'Good Performance'
+            'Remarks': r[16] if r[16] else 'Good Performance',
+            'Mother_Name': r[17] if len(r) > 17 and r[17] else '',
+            'School_Name': r[18] if len(r) > 18 and r[18] else 'PM SHRI JAWAHAR NAVODAYA VIDYALAYA CHHOTAUDEPUR'
         }
         sub_dict = json.loads(r[13]) if r[13] else {}
         for sub in ALL_SUBJECTS:
@@ -396,10 +431,19 @@ def process_data_excel(excel_file_source):
     else:
         df = pd.read_excel(xls, sheet_name=sheet_names[0])
 
-    meta_cols = ['Class', 'Roll_No', 'Student_Name', 'Father_Name', 'DOB', 'Aadhaar_No', 'Mobile_No', 'Exam_Type', 'Max_Marks', 'Class_Teacher', 'Attendance', 'Discipline', 'Remarks']
+    meta_cols = ['Class', 'Roll_No', 'Student_Name', 'Father_Name', 'Mother_Name', 'DOB', 'Aadhaar_No', 'Mobile_No', 'Exam_Type', 'Max_Marks', 'Class_Teacher', 'Attendance', 'Discipline', 'Remarks', 'School_Name']
     for col in meta_cols:
         if col not in df.columns:
-            df[col] = "95%" if col == 'Attendance' else ("A" if col == 'Discipline' else ("Good" if col == 'Remarks' else ""))
+            if col == 'Attendance':
+                df[col] = "95%"
+            elif col == 'Discipline':
+                df[col] = "A"
+            elif col == 'Remarks':
+                df[col] = "Good Performance"
+            elif col == 'School_Name':
+                df[col] = "PM SHRI JAWAHAR NAVODAYA VIDYALAYA CHHOTAUDEPUR"
+            else:
+                df[col] = ""
 
     for col in ['Roll_No', 'Aadhaar_No', 'Mobile_No']:
         if col in df.columns:
@@ -441,24 +485,33 @@ def load_board_toppers():
             return json.load(f)
     return []
 
-# ReportLab Decorative Canvas Callbacks
-def create_watermark_callback(watermark_text, with_border=True):
-    def draw_canvas(canvas, doc):
-        canvas.saveState()
-        if with_border:
-            canvas.setStrokeColor(colors.HexColor('#1565C0'))
-            canvas.setLineWidth(3)
-            canvas.rect(15, 15, doc.pagesize[0]-30, doc.pagesize[1]-30)
-            canvas.setLineWidth(1)
-            canvas.rect(19, 19, doc.pagesize[0]-38, doc.pagesize[1]-38)
-
-        canvas.setFont('Helvetica-Bold', 36)
-        canvas.setFillColor(colors.HexColor('#E0E0E0'), alpha=0.25)
-        canvas.translate(doc.pagesize[0] / 2.0, doc.pagesize[1] / 2.0)
-        canvas.rotate(35)
-        canvas.drawCentredString(0, 0, watermark_text)
-        canvas.restoreState()
-    return draw_canvas
+# Custom Canvas Callback for Watermark & Decorative Outer Border
+def draw_report_card_border_and_watermark(canvas_obj, doc, school_name="SCHOOL"):
+    canvas_obj.saveState()
+    w, h = doc.pagesize
+    
+    # Outer Maroon Decorative Double Border
+    canvas_obj.setStrokeColor(colors.HexColor('#A91D22'))
+    canvas_obj.setLineWidth(2.5)
+    canvas_obj.rect(12, 12, w - 24, h - 24)
+    
+    canvas_obj.setLineWidth(1.0)
+    canvas_obj.rect(16, 16, w - 32, h - 32)
+    
+    # Corner Accents
+    for x, y in [(20, 20), (w - 20, 20), (20, h - 20), (w - 20, h - 20)]:
+        canvas_obj.circle(x, y, 3, stroke=1, fill=1)
+        
+    # Background Watermark
+    canvas_obj.setFont('Helvetica-Bold', 36)
+    canvas_obj.setFillColor(colors.HexColor('#CCCCCC'), alpha=0.15)
+    canvas_obj.saveState()
+    canvas_obj.translate(w / 2.0, h / 2.0)
+    canvas_obj.rotate(32)
+    canvas_obj.drawCentredString(0, 0, str(school_name).upper())
+    canvas_obj.restoreState()
+    
+    canvas_obj.restoreState()
 
 def generate_merit_certificate_pdf(student_info, exam_type, percentage, rank):
     buffer = io.BytesIO()
@@ -479,7 +532,8 @@ def generate_merit_certificate_pdf(student_info, exam_type, percentage, rank):
         except Exception:
             pass
 
-    story.append(Paragraph("PM SHRI JAWAHAR NAVODAYA VIDYALAYA CHHOTAUDEPUR", cert_title))
+    school_title = student_info.get('School_Name', 'PM SHRI JAWAHAR NAVODAYA VIDYALAYA CHHOTAUDEPUR')
+    story.append(Paragraph(f"<b>{school_title.upper()}</b>", cert_title))
     story.append(Spacer(1, 4))
     story.append(Paragraph("🏆 CERTIFICATE OF ACADEMIC EXCELLENCE 🏆", sub_title))
     story.append(Spacer(1, 15))
@@ -493,8 +547,13 @@ def generate_merit_certificate_pdf(student_info, exam_type, percentage, rank):
     story.append(Paragraph(cert_text, body_style))
     story.append(Spacer(1, 20))
 
-    seal_element = RLImage(SEAL_PATH, width=50, height=50) if os.path.exists(SEAL_PATH) else Paragraph("<b>[OFFICIAL SEAL]</b>", body_style)
-    sign_element = RLImage(SIGN_PATH, width=70, height=35) if os.path.exists(SIGN_PATH) else Paragraph("<b>____________________</b>", body_style)
+    seal_w = st.session_state.get("seal_width", 50)
+    seal_h = st.session_state.get("seal_height", 50)
+    sign_w = st.session_state.get("sig_width", 70)
+    sign_h = st.session_state.get("sig_height", 35)
+
+    seal_element = RLImage(SEAL_PATH, width=seal_w, height=seal_h) if os.path.exists(SEAL_PATH) else Paragraph("<b>[OFFICIAL SEAL]</b>", body_style)
+    sign_element = RLImage(SIGN_PATH, width=sign_w, height=sign_h) if os.path.exists(SIGN_PATH) else Paragraph("<b>____________________</b>", body_style)
 
     sig_data = [
         [Paragraph("<b>____________________</b>", body_style), seal_element, sign_element],
@@ -504,91 +563,287 @@ def generate_merit_certificate_pdf(student_info, exam_type, percentage, rank):
     sig_table.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
     story.append(sig_table)
 
-    watermark_fn = create_watermark_callback("PM SHRI JNV CHHOTAUDEPUR", with_border=True)
+    watermark_fn = lambda c, d: draw_report_card_border_and_watermark(c, d, school_title)
     doc.build(story, onFirstPage=watermark_fn, onLaterPages=watermark_fn)
     buffer.seek(0)
     return buffer.getvalue()
 
 def generate_pdf_scorecard(student_info, filtered_df):
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=22, leftMargin=22, topMargin=22, bottomMargin=22)
     story = []
     styles = getSampleStyleSheet()
 
-    title_style = ParagraphStyle('DocTitle', parent=styles['Heading1'], fontName='Helvetica-Bold', fontSize=15, leading=18, alignment=1, textColor=colors.HexColor('#1E88E5'))
-    subtitle_style = ParagraphStyle('DocSubtitle', parent=styles['Heading3'], fontName='Helvetica-Bold', fontSize=11, leading=14, alignment=1, textColor=colors.HexColor('#333333'))
-    normal_style = styles['Normal']
+    title_style = ParagraphStyle('DocTitle', parent=styles['Heading1'], fontName='Helvetica-Bold', fontSize=14, leading=16, alignment=1, textColor=colors.HexColor('#A91D22'))
+    sub_title_style = ParagraphStyle('DocSub', parent=styles['Normal'], fontName='Helvetica', fontSize=8, leading=10, alignment=1, textColor=colors.HexColor('#333333'))
+    term_style = ParagraphStyle('TermTitle', parent=styles['Heading2'], fontName='Helvetica-Bold', fontSize=10, leading=12, alignment=1, textColor=colors.HexColor('#0D47A1'))
+    
+    cell_head = ParagraphStyle('CellHead', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=7.5, leading=9, alignment=1)
+    cell_left = ParagraphStyle('CellLeft', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=8, leading=10, alignment=0)
+    cell_text = ParagraphStyle('CellText', parent=styles['Normal'], fontName='Helvetica', fontSize=8, leading=10, alignment=1)
+    bold_center = ParagraphStyle('BoldCenter', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=8.5, leading=10, alignment=1)
 
-    if os.path.exists(LOGO_PATH):
-        try:
-            logo_img = RLImage(LOGO_PATH, width=45, height=45)
-            logo_img.hAlign = 'CENTER'
-            story.append(logo_img)
-            story.append(Spacer(1, 4))
-        except Exception:
-            pass
+    # 1. Header (School Logo + Title + CBSE Logo)
+    logo_left = RLImage(LOGO_PATH, width=50, height=50) if os.path.exists(LOGO_PATH) else Paragraph("<b>[SCHOOL LOGO]</b>", bold_center)
+    logo_right = RLImage(CBSE_LOGO_PATH, width=50, height=50) if os.path.exists(CBSE_LOGO_PATH) else (RLImage(LOGO_PATH, width=50, height=50) if os.path.exists(LOGO_PATH) else Paragraph("<b>[CBSE LOGO]</b>", bold_center))
+    
+    school_name_str = str(student_info.get('School_Name', 'PM SHRI JAWAHAR NAVODAYA VIDYALAYA CHHOTAUDEPUR')).strip()
+    if not school_name_str or school_name_str == 'nan':
+        school_name_str = "PM SHRI JAWAHAR NAVODAYA VIDYALAYA CHHOTAUDEPUR"
 
-    story.append(Paragraph("PM SHRI JAWAHAR NAVODAYA VIDYALAYA CHHOTAUDEPUR", title_style))
+    header_data = [
+        [
+            logo_left,
+            [
+                Paragraph(f"<b>{school_name_str.upper()}</b>", title_style),
+                Paragraph("CBSE Affiliated Senior Secondary Residential School<br/>Helpline: +91 2669 222020 | Email: jnvchhotaudepur@gmail.com", sub_title_style),
+                Spacer(1, 2),
+                Paragraph("<b>ACADEMIC PERFORMANCE REPORT CARD (SESSION 2025-2026)</b>", term_style)
+            ],
+            logo_right
+        ]
+    ]
+    t_header = Table(header_data, colWidths=[60, 430, 60])
+    t_header.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 2),
+    ]))
+    story.append(t_header)
     story.append(Spacer(1, 4))
-    story.append(Paragraph("STUDENT ACADEMIC PERFORMANCE REPORT CARD", subtitle_style))
-    story.append(Spacer(1, 8))
+
+    # 2. Student Profile Block & Photo
+    photo_file = f"photos/students/{student_info['Roll_No']}.png"
+    photo_elem = RLImage(photo_file, width=70, height=80) if os.path.exists(photo_file) else Paragraph("<b>[STUDENT<br/>PHOTO]</b>", bold_center)
+
+    mother_name = student_info.get('Mother_Name', '')
+    if not mother_name or pd.isna(mother_name):
+        mother_name = "N/A"
 
     info_data = [
-        [Paragraph(f"<b>Student Name:</b> {student_info['Student_Name']}", normal_style), Paragraph(f"<b>Roll No:</b> {student_info['Roll_No']}", normal_style)],
-        [Paragraph(f"<b>Class:</b> {student_info['Class']}", normal_style), Paragraph(f"<b>Class Teacher:</b> {student_info['Class_Teacher']}", normal_style)],
-        [Paragraph(f"<b>Father's Name:</b> {student_info['Father_Name']}", normal_style), Paragraph(f"<b>Aadhaar:</b> [Aadhaar Redacted]", normal_style)],
-        [Paragraph(f"<b>Attendance:</b> {student_info.get('Attendance', '95%')}", normal_style), Paragraph(f"<b>Discipline Grade:</b> {student_info.get('Discipline', 'A')}", normal_style)]
+        [Paragraph(f"<b>Student's Name :</b> {student_info['Student_Name']}", cell_left), Paragraph(f"<b>Class & Sec :</b> Class {student_info['Class']}", cell_left)],
+        [Paragraph(f"<b>Father's Name :</b> {student_info['Father_Name']}", cell_left), Paragraph(f"<b>Roll No :</b> {student_info['Roll_No']}", cell_left)],
+        [Paragraph(f"<b>Mother's Name :</b> {mother_name}", cell_left), Paragraph(f"<b>Aadhaar No :</b> [Aadhaar Redacted]", cell_left)],
+        [Paragraph(f"<b>D.O.B. :</b> {student_info['DOB']}", cell_left), Paragraph(f"<b>Attendance :</b> {student_info.get('Attendance', '95%')}", cell_left)],
+        [Paragraph(f"<b>Class Teacher :</b> {student_info.get('Class_Teacher', 'Teacher Incharge')}", cell_left), Paragraph(f"<b>Discipline Grade :</b> {student_info.get('Discipline', 'A')}", cell_left)]
     ]
-    info_table = Table(info_data, colWidths=[260, 260])
-    info_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F8F9FA')),
-        ('PADDING', (0, 0), (-1, -1), 5),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#E0E0E0')),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    t_info = Table(info_data, colWidths=[250, 200])
+    t_info.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('PADDING', (0,0), (-1,-1), 2),
     ]))
-    story.append(info_table)
-    story.append(Spacer(1, 10))
 
-    for _, row in filtered_df.iterrows():
-        exam_header = f"<b>Exam:</b> {row['Exam_Type']} &nbsp;|&nbsp; <b>Score:</b> {int(row['Total_Marks'])}/{int(row['Max_Marks'])} ({row['Percentage']:.2f}%) &nbsp;|&nbsp; <b>Rank:</b> #{row['Class_Rank']}"
-        story.append(Paragraph(exam_header, styles['Heading3']))
-        story.append(Spacer(1, 4))
+    profile_block = Table([
+        [t_info, photo_elem]
+    ], colWidths=[450, 100])
+    profile_block.setStyle(TableStyle([
+        ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#A91D22')),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#E0E0E0')),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('ALIGN', (1,0), (1,0), 'CENTER'),
+        ('PADDING', (0,0), (-1,-1), 3),
+    ]))
+    story.append(profile_block)
+    story.append(Spacer(1, 6))
 
-        table_data = [["S.No.", "Subject Name", "Marks Obtained"]]
-        active_subs = [s for s in ALL_SUBJECTS if s in row and pd.notna(row[s])]
-        for idx, sub_name in enumerate(active_subs, start=1):
-            val = row[sub_name]
-            val_str = str(int(val)) if pd.notna(val) and float(val).is_integer() else str(val)
-            table_data.append([str(idx), str(sub_name), val_str])
+    # 3. Comprehensive Multi-Term Scholastic Marks Table
+    sch_rows = [
+        [
+            Paragraph("<b>Scholastic Subjects</b>", cell_head),
+            Paragraph("<b>Term 1 Performance</b>", cell_head), "", "", "", "",
+            Paragraph("<b>Term 2 Performance</b>", cell_head), "", "", "", "",
+            Paragraph("<b>Overall Performance</b>", cell_head), ""
+        ],
+        [
+            "",
+            Paragraph("<b>PWT-1<br/>(10)</b>", cell_head), Paragraph("<b>PWT-2<br/>(10)</b>", cell_head), Paragraph("<b>Term-1<br/>(80)</b>", cell_head), Paragraph("<b>Total<br/>(100)</b>", cell_head), Paragraph("<b>Grade</b>", cell_head),
+            Paragraph("<b>PWT-3<br/>(10)</b>", cell_head), Paragraph("<b>PWT-4<br/>(10)</b>", cell_head), Paragraph("<b>Term End<br/>(80)</b>", cell_head), Paragraph("<b>Total<br/>(100)</b>", cell_head), Paragraph("<b>Grade</b>", cell_head),
+            Paragraph("<b>Total Marks</b>", cell_head), Paragraph("<b>Grade</b>", cell_head)
+        ]
+    ]
 
-        score_table = Table(table_data, colWidths=[50, 320, 150])
-        score_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1E88E5')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#CCCCCC')),
-            ('PADDING', (0, 0), (-1, -1), 4),
-            ('ALIGN', (0, 0), (0, -1), 'CENTER'),
-            ('ALIGN', (2, 0), (2, -1), 'CENTER'),
-        ]))
-        story.append(score_table)
-        story.append(Spacer(1, 8))
+    active_subs = []
+    for sub in ALL_SUBJECTS:
+        if sub in filtered_df.columns and filtered_df[sub].notna().any():
+            active_subs.append(sub)
+    if not active_subs:
+        active_subs = ['Gujarati', 'Hindi', 'English', 'Mathematics', 'Science', 'Social_Science']
 
-    story.append(Paragraph(f"<b>Teacher Remarks:</b> {student_info.get('Remarks', 'Keep up the good work!')}", normal_style))
-    story.append(Spacer(1, 10))
+    def get_exam_mark(exam_kw, sub_col):
+        for _, r in filtered_df.iterrows():
+            if exam_kw.lower() in str(r['Exam_Type']).lower():
+                v = r.get(sub_col, np.nan)
+                if pd.notna(v):
+                    return float(v)
+        return None
 
-    seal_element = RLImage(SEAL_PATH, width=45, height=45) if os.path.exists(SEAL_PATH) else Paragraph("<b>[SEAL]</b>", normal_style)
-    sign_element = RLImage(SIGN_PATH, width=65, height=30) if os.path.exists(SIGN_PATH) else Paragraph("<b>________________</b>", normal_style)
+    tot_overall_obtained = 0
+    tot_overall_max = 0
+
+    for sub in active_subs:
+        pwt1 = get_exam_mark('pwt-1', sub) or get_exam_mark('pwt 1', sub)
+        pwt2 = get_exam_mark('pwt-2', sub) or get_exam_mark('pwt 2', sub)
+        term1 = get_exam_mark('term-1', sub) or get_exam_mark('term 1', sub) or get_exam_mark('half', sub)
+        
+        t1_parts = [v for v in [pwt1, pwt2, term1] if v is not None]
+        t1_total = sum(t1_parts) if t1_parts else None
+        t1_grade = calculate_grade(t1_total) if t1_total is not None else "-"
+
+        pwt3 = get_exam_mark('pwt-3', sub) or get_exam_mark('pwt 3', sub)
+        pwt4 = get_exam_mark('pwt-4', sub) or get_exam_mark('pwt 4', sub)
+        term2 = get_exam_mark('term end', sub) or get_exam_mark('annual', sub) or get_exam_mark('final', sub)
+        
+        t2_parts = [v for v in [pwt3, pwt4, term2] if v is not None]
+        t2_total = sum(t2_parts) if t2_parts else None
+        t2_grade = calculate_grade(t2_total) if t2_total is not None else "-"
+
+        comb_parts = []
+        if t1_total is not None: comb_parts.append(t1_total)
+        if t2_total is not None: comb_parts.append(t2_total)
+
+        if comb_parts:
+            overall_sub_score = sum(comb_parts) / len(comb_parts)
+            tot_overall_obtained += overall_sub_score
+            tot_overall_max += 100
+            overall_grade = calculate_grade(overall_sub_score)
+        else:
+            overall_sub_score = None
+            overall_grade = "-"
+
+        def fmt(val):
+            if val is None: return "-"
+            return f"{val:.1f}" if not float(val).is_integer() else str(int(val))
+
+        sch_rows.append([
+            Paragraph(f"<b>{sub.replace('_', ' ')}</b>", cell_left),
+            Paragraph(fmt(pwt1), cell_text), Paragraph(fmt(pwt2), cell_text), Paragraph(fmt(term1), cell_text), Paragraph(fmt(t1_total), cell_text), Paragraph(t1_grade, cell_text),
+            Paragraph(fmt(pwt3), cell_text), Paragraph(fmt(pwt4), cell_text), Paragraph(fmt(term2), cell_text), Paragraph(fmt(t2_total), cell_text), Paragraph(t2_grade, cell_text),
+            Paragraph(fmt(overall_sub_score), cell_text), Paragraph(overall_grade, cell_text)
+        ])
+
+    t_sch = Table(sch_rows, colWidths=[92, 38, 38, 44, 42, 34, 38, 38, 44, 42, 34, 42, 24])
+    t_sch.setStyle(TableStyle([
+        ('SPAN', (0,0), (0,1)),
+        ('SPAN', (1,0), (5,0)),
+        ('SPAN', (6,0), (10,0)),
+        ('SPAN', (11,0), (12,0)),
+        ('BACKGROUND', (0,0), (-1,1), colors.HexColor('#F8E8E8')),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#555555')),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('PADDING', (0,0), (-1,-1), 2.5),
+    ]))
+    story.append(t_sch)
+    story.append(Spacer(1, 6))
+
+    # 4. Overall Summary Box
+    pct_val = (tot_overall_obtained / tot_overall_max * 100) if tot_overall_max > 0 else filtered_df['Percentage'].mean()
+    ov_grade = calculate_grade(pct_val)
+
+    summary_data = [
+        [
+            Paragraph(f"<b>TOTAL MARKS:</b> {int(tot_overall_obtained)} / {int(tot_overall_max if tot_overall_max > 0 else 600)}", cell_left),
+            Paragraph(f"<b>PERCENTAGE:</b> {pct_val:.2f}%", cell_head),
+            Paragraph(f"<b>OVERALL GRADE:</b> {ov_grade}", cell_head)
+        ]
+    ]
+    t_sum = Table(summary_data, colWidths=[240, 160, 150])
+    t_sum.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#E8F5E9')),
+        ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#2E7D32')),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#A5D6A7')),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('PADDING', (0,0), (-1,-1), 4),
+    ]))
+    story.append(t_sum)
+    story.append(Spacer(1, 6))
+
+    # 5. Co-Scholastic & Grade Scale Legend
+    coscholastic_data = [
+        [Paragraph("<b>Co-Scholastic Areas (5 Point Scale)</b>", cell_head), Paragraph("<b>Grade</b>", cell_head)],
+        [Paragraph("Work Education (Pre-Vocational)", cell_left), Paragraph("A", cell_text)],
+        [Paragraph("Art Education", cell_left), Paragraph("A", cell_text)],
+        [Paragraph("Health & Physical Education", cell_left), Paragraph("A", cell_text)],
+        [Paragraph("Discipline & Conduct", cell_left), Paragraph("A", cell_text)]
+    ]
+    t_cos = Table(coscholastic_data, colWidths=[195, 50])
+    t_cos.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#EEEEEE')),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#777777')),
+        ('PADDING', (0,0), (-1,-1), 2.5),
+    ]))
+
+    scale_data = [
+        [Paragraph("<b>Grading Scale for Scholastic Areas</b>", cell_head), ""],
+        [Paragraph("91 - 100 : A1 &nbsp;&nbsp;|&nbsp;&nbsp; 81 - 90 : A2", cell_text), Paragraph("71 - 80 : B1 &nbsp;&nbsp;|&nbsp;&nbsp; 61 - 70 : B2", cell_text)],
+        [Paragraph("51 - 60 : C1 &nbsp;&nbsp;|&nbsp;&nbsp; 41 - 50 : C2", cell_text), Paragraph("33 - 40 : D &nbsp;&nbsp;|&nbsp;&nbsp; Below 33 : E (Needs Attention)", cell_text)]
+    ]
+    t_scale = Table(scale_data, colWidths=[150, 150])
+    t_scale.setStyle(TableStyle([
+        ('SPAN', (0,0), (1,0)),
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#EEEEEE')),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#777777')),
+        ('PADDING', (0,0), (-1,-1), 2.5),
+    ]))
+
+    co_scale_table = Table([[t_cos, t_scale]], colWidths=[250, 300])
+    co_scale_table.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'TOP'),
+        ('PADDING', (0,0), (-1,-1), 0),
+    ]))
+    story.append(co_scale_table)
+    story.append(Spacer(1, 6))
+
+    # 6. Teacher Remarks & Promotion
+    remarks_data = [
+        [Paragraph(f"<b>Class Teacher's Remarks:</b> {student_info.get('Remarks', 'Good Performance and active participation.')}", cell_left)],
+        [Paragraph("<b>Result Status:</b> PASSED AND PROMOTED TO NEXT HIGHER CLASS", ParagraphStyle('Pass', parent=cell_left, textColor=colors.HexColor('#1B5E20')))]
+    ]
+    t_rem = Table(remarks_data, colWidths=[550])
+    t_rem.setStyle(TableStyle([
+        ('BOX', (0,0), (-1,-1), 0.5, colors.HexColor('#888888')),
+        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#FAFAFA')),
+        ('PADDING', (0,0), (-1,-1), 3),
+    ]))
+    story.append(t_rem)
+    story.append(Spacer(1, 10 + st.session_state.get("sig_y_offset", 0)))
+
+    # 7. Signatures Table (Parent, Teacher, Principal & Seal)
+    seal_w = st.session_state.get("seal_width", 50)
+    seal_h = st.session_state.get("seal_height", 50)
+    sign_w = st.session_state.get("sig_width", 70)
+    sign_h = st.session_state.get("sig_height", 35)
+
+    seal_elem = RLImage(SEAL_PATH, width=seal_w, height=seal_h) if os.path.exists(SEAL_PATH) else Paragraph("<b>[SEAL]</b>", bold_center)
+    sign_elem = RLImage(SIGN_PATH, width=sign_w, height=sign_h) if os.path.exists(SIGN_PATH) else Paragraph("<b>________________</b>", bold_center)
+
+    principal_block = Table([[seal_elem, sign_elem]], colWidths=[seal_w + 5, sign_w + 5])
+    principal_block.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER')
+    ]))
 
     sig_data = [
-        [Paragraph("<b>____________________</b>", normal_style), seal_element, sign_element],
-        [Paragraph("<b>Class Teacher Sign</b>", normal_style), Paragraph("<b>School Seal</b>", normal_style), Paragraph("<b>Principal Signature</b>", normal_style)]
+        [
+            Paragraph("<b>______________________</b>", cell_head),
+            Paragraph("<b>______________________</b>", cell_head),
+            principal_block
+        ],
+        [
+            Paragraph("<b>Parent's Signature</b>", cell_head),
+            Paragraph("<b>Class Incharge Signature</b>", cell_head),
+            Paragraph("<b>Principal Signature & School Seal</b>", cell_head)
+        ]
     ]
-    sig_table = Table(sig_data, colWidths=[180, 160, 180])
-    sig_table.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
-    story.append(sig_table)
+    t_sig = Table(sig_data, colWidths=[180, 185, 185])
+    t_sig.setStyle(TableStyle([
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('PADDING', (0,0), (-1,-1), 2),
+    ]))
+    story.append(t_sig)
 
-    watermark_fn = create_watermark_callback("PM SHRI JNV CHHOTAUDEPUR", with_border=True)
+    watermark_fn = lambda c, d: draw_report_card_border_and_watermark(c, d, school_name_str)
     doc.build(story, onFirstPage=watermark_fn, onLaterPages=watermark_fn)
     buffer.seek(0)
     return buffer.getvalue()
@@ -612,7 +867,8 @@ def generate_admit_card_pdf(student_info):
         except Exception:
             pass
 
-    story.append(Paragraph("PM SHRI JAWAHAR NAVODAYA VIDYALAYA CHHOTAUDEPUR", title_style))
+    school_name_str = student_info.get('School_Name', 'PM SHRI JAWAHAR NAVODAYA VIDYALAYA CHHOTAUDEPUR')
+    story.append(Paragraph(f"<b>{school_name_str.upper()}</b>", title_style))
     story.append(Paragraph("EXAMINATION ADMIT CARD / HALL TICKET (2025-26)", sub_style))
     story.append(Spacer(1, 10))
 
@@ -624,7 +880,7 @@ def generate_admit_card_pdf(student_info):
         [Paragraph(f"<b>Roll No:</b> {student_info['Roll_No']}", normal_style), ""],
         [Paragraph(f"<b>Class:</b> {student_info['Class']}", normal_style), ""],
         [Paragraph(f"<b>Father's Name:</b> {student_info['Father_Name']}", normal_style), ""],
-        [Paragraph(f"<b>Exam Center:</b> JNV Chhotaudepur Main Campus", normal_style), ""]
+        [Paragraph(f"<b>Exam Center:</b> Main School Campus", normal_style), ""]
     ]
     t = Table(info_data, colWidths=[380, 120])
     t.setStyle(TableStyle([
@@ -645,8 +901,13 @@ def generate_admit_card_pdf(student_info):
     story.append(Paragraph(rules_text, normal_style))
     story.append(Spacer(1, 20))
 
-    seal_element = RLImage(SEAL_PATH, width=45, height=45) if os.path.exists(SEAL_PATH) else Paragraph("<b>[SEAL]</b>", normal_style)
-    sign_element = RLImage(SIGN_PATH, width=65, height=30) if os.path.exists(SIGN_PATH) else Paragraph("<b>________________</b>", normal_style)
+    seal_w = st.session_state.get("seal_width", 45)
+    seal_h = st.session_state.get("seal_height", 45)
+    sign_w = st.session_state.get("sig_width", 65)
+    sign_h = st.session_state.get("sig_height", 30)
+
+    seal_element = RLImage(SEAL_PATH, width=seal_w, height=seal_h) if os.path.exists(SEAL_PATH) else Paragraph("<b>[SEAL]</b>", normal_style)
+    sign_element = RLImage(SIGN_PATH, width=sign_w, height=sign_h) if os.path.exists(SIGN_PATH) else Paragraph("<b>________________</b>", normal_style)
 
     sig_data = [
         [Paragraph("<b>____________________</b>", normal_style), seal_element, sign_element],
@@ -656,7 +917,7 @@ def generate_admit_card_pdf(student_info):
     sig_table.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
     story.append(sig_table)
 
-    watermark_fn = create_watermark_callback("PM SHRI JNV CHHOTAUDEPUR", with_border=True)
+    watermark_fn = lambda c, d: draw_report_card_border_and_watermark(c, d, school_name_str)
     doc.build(story, onFirstPage=watermark_fn, onLaterPages=watermark_fn)
     buffer.seek(0)
     return buffer.getvalue()
@@ -670,7 +931,9 @@ with h_col1:
 with h_col2:
     st.markdown("<h2 class='main-title'>PM SHRI JAWAHAR NAVODAYA VIDYALAYA CHHOTAUDEPUR</h2>", unsafe_allow_html=True)
 with h_col3:
-    if os.path.exists(LOGO_PATH):
+    if os.path.exists(CBSE_LOGO_PATH):
+        st.markdown(f'<div class="header-logo-right mobile-hide"><img src="data:image/png;base64,{get_base64_image(CBSE_LOGO_PATH)}" width="80"></div>', unsafe_allow_html=True)
+    elif os.path.exists(LOGO_PATH):
         st.markdown(f'<div class="header-logo-right mobile-hide"><img src="data:image/png;base64,{get_base64_image(LOGO_PATH)}" width="80"></div>', unsafe_allow_html=True)
 
 st.markdown("---")
@@ -714,7 +977,6 @@ def render_topper_marquee(topper_list):
 # 👨‍🎓 PARENT PORTAL
 # ==============================================================================
 if menu == "👨‍🎓 PARENT PORTAL":
-    # Dynamic Digital Notice Board
     notices = load_notices()
     if notices:
         st.markdown(f"""
@@ -726,7 +988,6 @@ if menu == "👨‍🎓 PARENT PORTAL":
             </div>
         """, unsafe_allow_html=True)
 
-    # Hall of Fame
     st.markdown("<div class='hall-of-fame-box'>", unsafe_allow_html=True)
     st.markdown("<h4 style='text-align: center; color: #0D47A1; margin-bottom: 8px;'>🏆 ACADEMIC HALL OF FAME (SCHOOL TOPPERS) 🏆</h4>", unsafe_allow_html=True)
     
@@ -875,7 +1136,7 @@ if menu == "👨‍🎓 PARENT PORTAL":
                 
                 b_c1, b_c2, b_c3 = st.columns(3)
                 with b_c1:
-                    st.download_button("📥 Report Card (PDF)", data=pdf_bytes, file_name=f"Report_{student_info['Roll_No']}.pdf", mime="application/pdf", use_container_width=True)
+                    st.download_button("📥 Comprehensive Report Card (PDF)", data=pdf_bytes, file_name=f"Report_{student_info['Roll_No']}.pdf", mime="application/pdf", use_container_width=True)
                 with b_c2:
                     st.download_button(txt['admit_btn'], data=admit_bytes, file_name=f"AdmitCard_{student_info['Roll_No']}.pdf", mime="application/pdf", use_container_width=True)
                 
@@ -1011,6 +1272,25 @@ elif menu == "⚙️ ADMIN PORTAL":
 
         st.markdown("---")
 
+        with st.expander("✒️ REPORT CARD STAMP & SIGNATURE ALIGNMENT SETTINGS", expanded=True):
+            st.write("🔧 Adjust size and offsets of Principal Signature and School Stamp on PDF Report Cards:")
+            sc1, sc2, sc3, sc4 = st.columns(4)
+            with sc1:
+                st.session_state["sig_width"] = st.slider("Signature Width (px)", 40, 150, st.session_state.get("sig_width", 80))
+                st.session_state["sig_height"] = st.slider("Signature Height (px)", 20, 80, st.session_state.get("sig_height", 35))
+            with sc2:
+                st.session_state["seal_width"] = st.slider("Stamp/Seal Width (px)", 30, 120, st.session_state.get("seal_width", 55))
+                st.session_state["seal_height"] = st.slider("Stamp/Seal Height (px)", 30, 120, st.session_state.get("seal_height", 55))
+            with sc3:
+                st.session_state["sig_y_offset"] = st.slider("Vertical Shift Above Signatures (px)", -20, 40, st.session_state.get("sig_y_offset", 0))
+            with sc4:
+                st.write(" ")
+                st.write(" ")
+                if st.button("💾 Save Alignment Settings"):
+                    st.success("✅ Signature and Stamp positions updated!")
+
+        st.markdown("---")
+
         with st.expander("📦 1. BULK CLASS RESULT PDF EXPORT & EXCEL MERIT LIST", expanded=False):
             if st.session_state["student_data"] is not None:
                 df_bulk = st.session_state["student_data"]
@@ -1092,322 +1372,6 @@ elif menu == "⚙️ ADMIN PORTAL":
                                 "Highest Score": s_data.max(),
                                 "Lowest Score": s_data.min(),
                                 "Average Score": round(s_data.mean(), 2),
-                                "Pass % (>=33)": f"{round((s_data[s_data >= 33].count() / len(s_data)) * 100, 1)}%"
+                                "Pass % (>=33)": f"{round((s_data[s_data >= 33].count() / len(s_data))*100, 2)}%"
                             })
                     st.dataframe(pd.DataFrame(sub_stats), hide_index=True, use_container_width=True)
-
-        with st.expander("✏️ 3. EDIT STUDENT DATA, RANKS & BULK PHOTO UPLOAD", expanded=False):
-            if st.session_state["student_data"] is not None:
-                st.markdown("##### 📷 Single Student Photo Upload")
-                up_p_col1, up_p_col2 = st.columns([2, 2])
-                with up_p_col1:
-                    roll_to_photo = st.selectbox("Select Student Roll No", sorted(st.session_state["student_data"]['Roll_No'].astype(str).unique()), key="photo_roll_sel")
-                with up_p_col2:
-                    stu_photo_file = st.file_uploader("Upload Single Photo", type=["png", "jpg", "jpeg"], key="stu_photo_up")
-                    if st.button("🖼️ Save Photo"):
-                        if stu_photo_file and roll_to_photo:
-                            Image.open(stu_photo_file).save(f"photos/students/{roll_to_photo}.png")
-                            st.success(f"✅ Photo uploaded for Roll No: {roll_to_photo}!")
-
-                st.markdown("---")
-                # NEW FEATURE 4: BULK STUDENT PHOTO UPLOAD (ZIP EXTRACTOR)
-                st.markdown("##### 📦 Bulk Student Photo Upload (ZIP Extractor)")
-                st.info("Upload a `.zip` file containing images named by Roll Number (e.g., `101.png`, `102.jpg`).")
-                zip_photo_file = st.file_uploader("Upload Photos Archive (.zip)", type=["zip"], key="zip_photos_up")
-                if st.button("🚀 Process & Extract ZIP Photos"):
-                    if zip_photo_file:
-                        try:
-                            extracted_count = 0
-                            with zipfile.ZipFile(zip_photo_file, 'r') as z:
-                                for file_info in z.infolist():
-                                    if not file_info.is_dir():
-                                        ext = os.path.splitext(file_info.filename)[1].lower()
-                                        if ext in ['.png', '.jpg', '.jpeg']:
-                                            raw_name = os.path.basename(file_info.filename)
-                                            roll_stem = os.path.splitext(raw_name)[0]
-                                            clean_roll = format_clean_number(roll_stem)
-                                            if clean_roll:
-                                                out_path = f"photos/students/{clean_roll}.png"
-                                                img_data = z.read(file_info.filename)
-                                                img = Image.open(io.BytesIO(img_data))
-                                                img.save(out_path)
-                                                extracted_count += 1
-                            st.success(f"✅ Successfully extracted and linked {extracted_count} student photo(s)!")
-                        except Exception as ex:
-                            st.error(f"❌ Error extracting ZIP: {ex}")
-
-                st.markdown("---")
-                st.markdown("##### 📝 Realtime Data & Rank Modifier")
-                
-                r_calc_col1, r_calc_col2 = st.columns([2, 2])
-                with r_calc_col1:
-                    if st.button("🔄 Auto-Recalculate Class Ranks"):
-                        df_mod = st.session_state["student_data"].copy()
-                        df_mod['Total_Marks'] = df_mod[ALL_SUBJECTS].sum(axis=1, skipna=True)
-                        df_mod['Percentage'] = ((df_mod['Total_Marks'] / df_mod['Max_Marks']) * 100).round(2)
-                        df_mod['Class_Rank'] = df_mod.groupby(['Class', 'Exam_Type'])['Total_Marks'].rank(ascending=False, method='min').fillna(0).astype(int)
-                        st.session_state["student_data"] = df_mod
-                        sync_df_to_sqlite(df_mod)
-                        st.success("✅ Class ranks recalculated & saved!")
-                        st.rerun()
-
-                edited_df = st.data_editor(st.session_state["student_data"], num_rows="dynamic", use_container_width=True, key="db_realtime_editor")
-
-                if "show_save_confirm" not in st.session_state:
-                    st.session_state["show_save_confirm"] = False
-
-                if st.button("💾 Save Edits to SQLite Database"):
-                    st.session_state["show_save_confirm"] = True
-
-                if st.session_state.get("show_save_confirm", False):
-                    st.warning("❓ **ARE YOU SURE YOU WANT TO UPDATE THE DATABASE?**")
-                    confirm_col1, confirm_col2 = st.columns(2)
-                    with confirm_col1:
-                        if st.button("✅ YES, SAVE DATA", use_container_width=True):
-                            for sub in ALL_SUBJECTS:
-                                if sub in edited_df.columns:
-                                    edited_df[sub] = pd.to_numeric(edited_df[sub], errors='coerce')
-                            edited_df['Total_Marks'] = edited_df[ALL_SUBJECTS].sum(axis=1, skipna=True)
-                            edited_df['Percentage'] = ((edited_df['Total_Marks'] / edited_df['Max_Marks']) * 100).round(2)
-                            
-                            st.session_state["student_data"] = edited_df
-                            sync_df_to_sqlite(edited_df)
-                            st.session_state["show_save_confirm"] = False
-                            st.success("✅ Database updated successfully!")
-                            st.rerun()
-                    with confirm_col2:
-                        if st.button("❌ NO, CANCEL", use_container_width=True):
-                            st.session_state["show_save_confirm"] = False
-                            st.info("Update cancelled.")
-                            st.rerun()
-
-        with st.expander("📢 4. DIGITAL NOTICE BOARD MANAGEMENT", expanded=False):
-            current_notices = load_notices()
-            st.subheader("Add New Notice Announcement")
-            new_notice = st.text_input("Notice Text")
-            if st.button("➕ Post Notice") and new_notice:
-                current_notices.insert(0, new_notice)
-                save_notices(current_notices)
-                st.success("✅ Notice posted!")
-                st.rerun()
-
-            st.markdown("---")
-            st.write("**Active Notices:**")
-            for n_idx, n_text in enumerate(current_notices):
-                nc1, nc2 = st.columns([5, 1])
-                nc1.write(f"🔹 {n_text}")
-                if nc2.button("🗑️ Delete", key=f"del_notice_{n_idx}"):
-                    current_notices.pop(n_idx)
-                    save_notices(current_notices)
-                    st.rerun()
-
-        with st.expander("✒️ 5. DIGITAL SEAL & SIGNATURES MANAGEMENT", expanded=False):
-            s_col1, s_col2 = st.columns(2)
-            with s_col1:
-                st.subheader("Upload School Stamp / Seal")
-                seal_file = st.file_uploader("Upload Official Seal", type=["png", "jpg", "jpeg"], key="seal_up")
-                if st.button("Save School Seal") and seal_file:
-                    Image.open(seal_file).save(SEAL_PATH)
-                    st.success("✅ School Seal updated!")
-            
-            with s_col2:
-                st.subheader("Upload Principal Signature")
-                sign_file = st.file_uploader("Upload Digital Sign", type=["png", "jpg", "jpeg"], key="sign_up")
-                if st.button("Save Principal Sign") and sign_file:
-                    Image.open(sign_file).save(SIGN_PATH)
-                    st.success("✅ Principal Signature updated!")
-
-        with st.expander("🖼️ 6. SCHOOL GALLERY MANAGEMENT", expanded=False):
-            gallery_upload = st.file_uploader("Upload Image to Gallery", type=["png", "jpg", "jpeg"], key="gal_upload")
-            if st.button("➕ Add Image to Gallery") and gallery_upload:
-                gal_path = os.path.join("photos/gallery", gallery_upload.name)
-                Image.open(gallery_upload).save(gal_path)
-                st.success("✅ Gallery image added successfully!")
-                st.rerun()
-
-            gallery_files = [f for f in os.listdir("photos/gallery") if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
-            if gallery_files:
-                st.write("**Current Gallery Photos:**")
-                cols = st.columns(4)
-                for idx, g_file in enumerate(gallery_files):
-                    with cols[idx % 4]:
-                        g_path = os.path.join("photos/gallery", g_file)
-                        st.image(g_path, use_container_width=True)
-                        if st.button(f"🗑️ Delete", key=f"del_gal_{idx}"):
-                            os.remove(g_path)
-                            st.success(f"Deleted {g_file}")
-                            st.rerun()
-
-        with st.expander("🏆 7. CBSE TOPPERS MANAGEMENT", expanded=False):
-            st.subheader("Add New Board Topper")
-            b_class = st.selectbox("Class", ["Class 12", "Class 10"])
-            b_name = st.text_input("Name")
-            b_percent = st.text_input("Percentage (e.g. 98.4%)")
-            b_year = st.text_input("Year", value="2025-26")
-            b_photo = st.file_uploader("Photo", type=["jpg", "png", "jpeg"])
-            if st.button("Add Board Topper") and b_name and b_photo:
-                photo_file = f"photos/board/{b_class.replace(' ', '_')}_{clean_val(b_name)}.png"
-                Image.open(b_photo).save(photo_file)
-                toppers = load_board_toppers()
-                toppers.append({"class": b_class, "name": b_name, "percentage": b_percent, "year": b_year, "photo": photo_file})
-                with open(BOARD_TOPPERS_FILE, "w") as f:
-                    json.dump(toppers, f)
-                st.success("✅ Board Topper Added!")
-                st.rerun()
-
-            toppers_list = load_board_toppers()
-            if toppers_list:
-                st.markdown("---")
-                st.write("**Current Board Toppers:**")
-                for idx, t in enumerate(toppers_list):
-                    t_col1, t_col2 = st.columns([4, 1])
-                    with t_col1:
-                        st.write(f"🏆 **{t['name']}** ({t['class']}, {t['year']}) - {t['percentage']}")
-                    with t_col2:
-                        if st.button(f"🗑️ Remove", key=f"del_top_{idx}"):
-                            if t.get("photo") and os.path.exists(t["photo"]):
-                                try:
-                                    os.remove(t["photo"])
-                                except Exception:
-                                    pass
-                            toppers_list.pop(idx)
-                            with open(BOARD_TOPPERS_FILE, "w") as f:
-                                json.dump(toppers_list, f)
-                            st.rerun()
-
-        with st.expander("🎨 8. BRANDING & BACKGROUND MANAGEMENT", expanded=False):
-            st.subheader("Logo Management")
-            up_logo = st.file_uploader("Upload Logo", type=["png", "jpg", "jpeg"], key="logo_up")
-            if st.button("Save Logo") and up_logo:
-                Image.open(up_logo).save(LOGO_PATH)
-                st.success("✅ Logo Updated!")
-
-            st.markdown("---")
-            st.subheader("Background Image Management")
-            bg_upload = st.file_uploader("Upload Background Image", type=["png", "jpg", "jpeg"], key="bg_up")
-            if st.button("🖼️ Set Background") and bg_upload:
-                Image.open(bg_upload).save(BG_PATH)
-                st.success("✅ Background image updated!")
-                st.rerun()
-
-            if os.path.exists(BG_PATH):
-                if st.button("🗑️ Remove Background Image"):
-                    os.remove(BG_PATH)
-                    st.success("✅ Background image removed!")
-                    st.rerun()
-
-        # UPDATED FEATURE 3: AUTOMATED WHATSAPP API & MANUAL LINK GENERATOR
-        with st.expander("📲 9. AUTOMATED WHATSAPP API & NOTIFICATIONS", expanded=False):
-            if st.session_state["student_data"] is not None:
-                df_notif = st.session_state["student_data"]
-                if 'Mobile_No' in df_notif.columns:
-                    n_cls = st.selectbox("Select Class", sorted(df_notif['Class'].astype(str).unique()), key="wa_cls")
-                    filtered_notif = df_notif[df_notif['Class'].astype(str) == str(n_cls)]
-                    msg_template = st.text_area("Message Content", "Dear Parent, your child's exam results are live on the portal. Check now!")
-                    
-                    wa_mode = st.radio("Dispatch Mode:", ["Automated Background API Call (Twilio/Meta)", "Manual wa.me Links"], horizontal=True)
-
-                    if wa_mode == "Automated Background API Call (Twilio/Meta)":
-                        st.caption("Configure your Cloud API Endpoint & Token to send background SMS/WhatsApp messages automatically.")
-                        api_endpoint = st.text_input("API Endpoint URL", value="https://api.twilio.com/2010-04-01/Accounts/YOUR_ACCOUNT_SID/Messages.json")
-                        api_token = st.text_input("API Key / Bearer Token", type="password")
-                        sender_id = st.text_input("Sender ID / WhatsApp Number", value="+14155238886")
-
-                        if st.button("🚀 Send Automated WhatsApp Messages"):
-                            sent_count = 0
-                            for _, row in filtered_notif.iterrows():
-                                mob = clean_mobile_for_wa(row['Mobile_No'])
-                                if len(mob) >= 10:
-                                    msg_body = f"Hello {row['Student_Name']},\n\n{msg_template}\nTotal Score: {row['Total_Marks']} ({row['Percentage']}%)"
-                                    try:
-                                        payload = {"To": f"whatsapp:+{mob}", "From": f"whatsapp:{sender_id}", "Body": msg_body}
-                                        headers = {"Authorization": f"Bearer {api_token}"}
-                                        # Background API dispatch call
-                                        res = requests.post(api_endpoint, data=payload, headers=headers, timeout=5)
-                                        sent_count += 1
-                                    except Exception:
-                                        pass
-                            st.success(f"✅ Processed automated dispatch for {sent_count} student(s)!")
-                    else:
-                        if st.button("🚀 Generate WhatsApp Dispatch Links"):
-                            for _, row in filtered_notif.iterrows():
-                                mob = clean_mobile_for_wa(row['Mobile_No'])
-                                if len(mob) >= 10:
-                                    msg_body = f"Hello {row['Student_Name']},\n\n{msg_template}\nTotal Score: {row['Total_Marks']} ({row['Percentage']}%)"
-                                    encoded_msg = urllib.parse.quote(msg_body)
-                                    wa_link = f"https://api.whatsapp.com/send?phone={mob}&text={encoded_msg}"
-                                    st.markdown(f"👉 **{row['Student_Name']}** ({row['Roll_No']}) -> [Click to Send WhatsApp Alert]({wa_link})")
-                else:
-                    st.error("Mobile_No column missing.")
-
-        with st.expander("📤 10. EXCEL DATA UPLOAD & SQLITE SYNC", expanded=False):
-            uploaded_file = st.file_uploader("Upload Excel Sheet (.xlsx)", type=["xlsx", "xls"])
-            if st.button("Process & Sync Database") and uploaded_file:
-                with open(EXCEL_FILE_PATH, "wb") as f:
-                    f.write(uploaded_file.getbuffer())
-                st.session_state["student_data"] = process_data_excel(EXCEL_FILE_PATH)
-                st.success("Excel & SQLite Database Successfully Updated!")
-
-        # NEW FEATURE 1: AUDIT LOG VIEWER IN ADMIN UI
-        with st.expander("📋 11. AUDIT LOG VIEWER (PARENT SEARCH LOGS)", expanded=False):
-            if os.path.exists(LOG_FILE):
-                log_df = pd.read_csv(LOG_FILE)
-                st.dataframe(log_df, use_container_width=True)
-                
-                search_term = st.text_input("Filter Log by Name or Roll No:", key="log_search")
-                if search_term:
-                    filtered_logs = log_df[
-                        log_df['Student_Name'].astype(str).str.contains(search_term, case=False, na=False) |
-                        log_df['Roll_No'].astype(str).str.contains(search_term, case=False, na=False)
-                    ]
-                    st.write("**Filtered Search Results:**")
-                    st.dataframe(filtered_logs, use_container_width=True)
-
-                csv_bytes = log_df.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    label="📥 Export Audit Logs (CSV)",
-                    data=csv_bytes,
-                    file_name=f"Result_Search_AuditLogs_{datetime.now().strftime('%Y%m%d')}.csv",
-                    mime="text/csv"
-                )
-            else:
-                st.info("ℹ️ No parent search logs recorded yet.")
-
-        # NEW FEATURE 2: DATABASE BACKUP & RESTORE MANAGER
-        with st.expander("🗄️ 12. DATABASE BACKUP & RESTORE MANAGER", expanded=False):
-            b_col1, b_col2 = st.columns(2)
-            with b_col1:
-                st.subheader("📥 Download DB Snapshot")
-                if os.path.exists(DB_FILE):
-                    with open(DB_FILE, "rb") as f:
-                        db_bytes = f.read()
-                    st.download_button(
-                        label="💾 Download Current SQLite DB (.db)",
-                        data=db_bytes,
-                        file_name=f"school_database_snapshot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db",
-                        mime="application/x-sqlite3",
-                        use_container_width=True
-                    )
-                else:
-                    st.warning("No Database file found.")
-
-            with b_col2:
-                st.subheader("📤 Restore DB Snapshot")
-                restored_db_file = st.file_uploader("Upload Backup Database File (.db)", type=["db"], key="restore_db_file")
-                if st.button("⚠️ Restore Database Snapshot", use_container_width=True):
-                    if restored_db_file:
-                        if os.path.exists(DB_FILE):
-                            shutil.copyfile(DB_FILE, f"backups/pre_restore_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db")
-                        with open(DB_FILE, "wb") as f:
-                            f.write(restored_db_file.getbuffer())
-                        st.session_state["student_data"] = load_sqlite_to_df()
-                        st.success("✅ Database Snapshot successfully restored & loaded!")
-                        st.rerun()
-
-# Footer Text
-st.markdown("---")
-st.markdown("""
-    <div style='text-align: center; color: #555555; padding: 12px; font-size: 14px;'>
-        <b>© 2026 PM SHRI JNV CHHOTAUDEPUR | Designed & Developed by <i>Anil Chaudhary</i></b>
-    </div>
-""", unsafe_allow_html=True)
