@@ -167,7 +167,10 @@ def mask_aadhaar(val):
 def clean_val(val):
     if pd.isna(val) or val is None:
         return ""
-    return re.sub(r'[^a-zA-Z0-9]', '', str(val)).lower().strip()
+    s = str(val).strip()
+    if s.endswith('.0'):
+        s = s[:-2]
+    return re.sub(r'[^a-zA-Z0-9]', '', s).lower().strip()
 
 def get_exam_priority(exam_name):
     e = str(exam_name).upper().strip()
@@ -1222,7 +1225,10 @@ elif menu == "⚙️ ADMIN PORTAL":
                     
                     if st.button("🚀 Generate WhatsApp Dispatch Links"):
                         for _, row in filtered_notif.iterrows():
-                            mob = re.sub(r'[^0-9]', '', str(row['Mobile_No']))
+                            mob_raw = str(row['Mobile_No']).strip()
+                            if mob_raw.endswith('.0'):
+                                mob_raw = mob_raw[:-2]
+                            mob = re.sub(r'[^0-9]', '', mob_raw)
                             if len(mob) >= 10:
                                 mob = "91" + mob[-10:]
                                 msg_body = f"Hello {row['Student_Name']},\n\n{msg_template}\nTotal Score: {row['Total_Marks']} ({row['Percentage']}%)"
