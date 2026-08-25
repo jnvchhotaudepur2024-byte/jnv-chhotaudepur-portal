@@ -12,6 +12,7 @@ import random
 import zipfile
 import hashlib
 import shutil
+import requests
 from datetime import datetime
 from PIL import Image
 import plotly.graph_objects as go
@@ -115,6 +116,7 @@ SEAL_PATH = "photos/system/seal.png"
 SIGN_PATH = "photos/system/signature.png"
 NOTICES_FILE = "notices.json"
 BOARD_TOPPERS_FILE = "board_toppers.json"
+LOG_FILE = "result_logs.csv"
 
 # Password Hashing & Security Helper
 DEFAULT_PASS = "Jnvcu@me2"
@@ -182,6 +184,26 @@ def format_clean_number(val):
 
 def clean_val(val):
     s = format_clean_number(val)
+    return re.sub(r'[^a-zA-Z0-9]', '', s).lower().strip()
+
+# Enhanced DOB Normalizer (Fixes 26.12.2011, 2011-12-26, 26/12/2011 variations)
+def clean_dob_str(val):
+    if pd.isna(val) or val is None:
+        return ""
+    s = str(val).strip()
+    if not s:
+        return ""
+    formats_to_try = [
+        "%d.%m.%Y", "%d-%m-%Y", "%d/%m/%Y", 
+        "%Y-%m-%d", "%Y/%m/%d", "%Y.%m.%d",
+        "%d%m%Y", "%m/%d/%Y"
+    ]
+    for fmt in formats_to_try:
+        try:
+            dt = datetime.strptime(s, fmt)
+            return dt.strftime("%Y%m%d")
+        except ValueError:
+            pass
     return re.sub(r'[^a-zA-Z0-9]', '', s).lower().strip()
 
 def clean_mobile_for_wa(val):
@@ -354,13 +376,12 @@ def save_notices(notices_list):
         json.dump(notices_list, f)
 
 def log_parent_search(roll_no, student_name, selected_class):
-    log_file = "result_logs.csv"
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     new_data = pd.DataFrame([{"Timestamp": timestamp, "Roll_No": str(roll_no), "Student_Name": student_name, "Class": selected_class}])
-    if os.path.exists(log_file):
-        new_data.to_csv(log_file, mode='a', header=False, index=False)
+    if os.path.exists(LOG_FILE):
+        new_data.to_csv(LOG_FILE, mode='a', header=False, index=False)
     else:
-        new_data.to_csv(log_file, mode='w', header=True, index=False)
+        new_data.to_csv(LOG_FILE, mode='w', header=True, index=False)
 
 def process_data_excel(excel_file_source):
     xls = pd.ExcelFile(excel_file_source)
@@ -809,7 +830,7 @@ if menu == "👨‍🎓 PARENT PORTAL":
                 
                 if "Option 1" in search_method:
                     with c2:
-                        dob_input = st.text_input("Date of Birth")
+                        dob_input = st.text_input("Date of Birth (e.g. 26.12.2011, 26/12/2011 or 2011-12-26)")
                 else:
                     with c2:
                         aadhaar_input = st.text_input("Aadhaar Number")
@@ -821,7 +842,7 @@ if menu == "👨‍🎓 PARENT PORTAL":
                     filtered_df = df[
                         (df['Class'].astype(str).str.strip().str.lower() == selected_class.strip().lower()) &
                         (df['Roll_No'].apply(clean_val) == clean_val(roll_no)) &
-                        (df['DOB'].apply(clean_val) == clean_val(dob_input))
+                        (df['DOB'].apply(clean_dob_str) == clean_dob_str(dob_input))
                     ]
                 else:
                     filtered_df = df[
@@ -932,6 +953,8 @@ if menu == "👨‍🎓 PARENT PORTAL":
                             subject_rows.append({'S.No.': s_no, 'Subject Name': sub_name, 'Marks Obtained': int(val) if float(val).is_integer() else val})
                             s_no += 1
                     st.dataframe(pd.DataFrame(subject_rows), hide_index=True, use_container_width=True)
+        elif submit_btn:
+            st.error("❌ No student record found matching the provided Class, Roll Number, and Credentials. Kripya details re-check karein.")
 
 # ==============================================================================
 # 🖼️ GALLERY & BOARD RESULTS
@@ -1073,18 +1096,45 @@ elif menu == "⚙️ ADMIN PORTAL":
                             })
                     st.dataframe(pd.DataFrame(sub_stats), hide_index=True, use_container_width=True)
 
-        with st.expander("✏️ 3. EDIT STUDENT DATA, RANKS & UPLOAD PHOTOS", expanded=False):
+        with st.expander("✏️ 3. EDIT STUDENT DATA, RANKS & BULK PHOTO UPLOAD", expanded=False):
             if st.session_state["student_data"] is not None:
-                st.markdown("##### 📷 Upload Student Photo")
+                st.markdown("##### 📷 Single Student Photo Upload")
                 up_p_col1, up_p_col2 = st.columns([2, 2])
                 with up_p_col1:
                     roll_to_photo = st.selectbox("Select Student Roll No", sorted(st.session_state["student_data"]['Roll_No'].astype(str).unique()), key="photo_roll_sel")
                 with up_p_col2:
-                    stu_photo_file = st.file_uploader("Upload Photo", type=["png", "jpg", "jpeg"], key="stu_photo_up")
+                    stu_photo_file = st.file_uploader("Upload Single Photo", type=["png", "jpg", "jpeg"], key="stu_photo_up")
                     if st.button("🖼️ Save Photo"):
                         if stu_photo_file and roll_to_photo:
                             Image.open(stu_photo_file).save(f"photos/students/{roll_to_photo}.png")
                             st.success(f"✅ Photo uploaded for Roll No: {roll_to_photo}!")
+
+                st.markdown("---")
+                # NEW FEATURE 4: BULK STUDENT PHOTO UPLOAD (ZIP EXTRACTOR)
+                st.markdown("##### 📦 Bulk Student Photo Upload (ZIP Extractor)")
+                st.info("Upload a `.zip` file containing images named by Roll Number (e.g., `101.png`, `102.jpg`).")
+                zip_photo_file = st.file_uploader("Upload Photos Archive (.zip)", type=["zip"], key="zip_photos_up")
+                if st.button("🚀 Process & Extract ZIP Photos"):
+                    if zip_photo_file:
+                        try:
+                            extracted_count = 0
+                            with zipfile.ZipFile(zip_photo_file, 'r') as z:
+                                for file_info in z.infolist():
+                                    if not file_info.is_dir():
+                                        ext = os.path.splitext(file_info.filename)[1].lower()
+                                        if ext in ['.png', '.jpg', '.jpeg']:
+                                            raw_name = os.path.basename(file_info.filename)
+                                            roll_stem = os.path.splitext(raw_name)[0]
+                                            clean_roll = format_clean_number(roll_stem)
+                                            if clean_roll:
+                                                out_path = f"photos/students/{clean_roll}.png"
+                                                img_data = z.read(file_info.filename)
+                                                img = Image.open(io.BytesIO(img_data))
+                                                img.save(out_path)
+                                                extracted_count += 1
+                            st.success(f"✅ Successfully extracted and linked {extracted_count} student photo(s)!")
+                        except Exception as ex:
+                            st.error(f"❌ Error extracting ZIP: {ex}")
 
                 st.markdown("---")
                 st.markdown("##### 📝 Realtime Data & Rank Modifier")
@@ -1246,7 +1296,8 @@ elif menu == "⚙️ ADMIN PORTAL":
                     st.success("✅ Background image removed!")
                     st.rerun()
 
-        with st.expander("📲 9. BULK WHATSAPP NOTIFICATIONS", expanded=False):
+        # UPDATED FEATURE 3: AUTOMATED WHATSAPP API & MANUAL LINK GENERATOR
+        with st.expander("📲 9. AUTOMATED WHATSAPP API & NOTIFICATIONS", expanded=False):
             if st.session_state["student_data"] is not None:
                 df_notif = st.session_state["student_data"]
                 if 'Mobile_No' in df_notif.columns:
@@ -1254,14 +1305,38 @@ elif menu == "⚙️ ADMIN PORTAL":
                     filtered_notif = df_notif[df_notif['Class'].astype(str) == str(n_cls)]
                     msg_template = st.text_area("Message Content", "Dear Parent, your child's exam results are live on the portal. Check now!")
                     
-                    if st.button("🚀 Generate WhatsApp Dispatch Links"):
-                        for _, row in filtered_notif.iterrows():
-                            mob = clean_mobile_for_wa(row['Mobile_No'])
-                            if len(mob) >= 10:
-                                msg_body = f"Hello {row['Student_Name']},\n\n{msg_template}\nTotal Score: {row['Total_Marks']} ({row['Percentage']}%)"
-                                encoded_msg = urllib.parse.quote(msg_body)
-                                wa_link = f"https://api.whatsapp.com/send?phone={mob}&text={encoded_msg}"
-                                st.markdown(f"👉 **{row['Student_Name']}** ({row['Roll_No']}) -> [Click to Send WhatsApp Alert]({wa_link})")
+                    wa_mode = st.radio("Dispatch Mode:", ["Automated Background API Call (Twilio/Meta)", "Manual wa.me Links"], horizontal=True)
+
+                    if wa_mode == "Automated Background API Call (Twilio/Meta)":
+                        st.caption("Configure your Cloud API Endpoint & Token to send background SMS/WhatsApp messages automatically.")
+                        api_endpoint = st.text_input("API Endpoint URL", value="https://api.twilio.com/2010-04-01/Accounts/YOUR_ACCOUNT_SID/Messages.json")
+                        api_token = st.text_input("API Key / Bearer Token", type="password")
+                        sender_id = st.text_input("Sender ID / WhatsApp Number", value="+14155238886")
+
+                        if st.button("🚀 Send Automated WhatsApp Messages"):
+                            sent_count = 0
+                            for _, row in filtered_notif.iterrows():
+                                mob = clean_mobile_for_wa(row['Mobile_No'])
+                                if len(mob) >= 10:
+                                    msg_body = f"Hello {row['Student_Name']},\n\n{msg_template}\nTotal Score: {row['Total_Marks']} ({row['Percentage']}%)"
+                                    try:
+                                        payload = {"To": f"whatsapp:+{mob}", "From": f"whatsapp:{sender_id}", "Body": msg_body}
+                                        headers = {"Authorization": f"Bearer {api_token}"}
+                                        # Background API dispatch call
+                                        res = requests.post(api_endpoint, data=payload, headers=headers, timeout=5)
+                                        sent_count += 1
+                                    except Exception:
+                                        pass
+                            st.success(f"✅ Processed automated dispatch for {sent_count} student(s)!")
+                    else:
+                        if st.button("🚀 Generate WhatsApp Dispatch Links"):
+                            for _, row in filtered_notif.iterrows():
+                                mob = clean_mobile_for_wa(row['Mobile_No'])
+                                if len(mob) >= 10:
+                                    msg_body = f"Hello {row['Student_Name']},\n\n{msg_template}\nTotal Score: {row['Total_Marks']} ({row['Percentage']}%)"
+                                    encoded_msg = urllib.parse.quote(msg_body)
+                                    wa_link = f"https://api.whatsapp.com/send?phone={mob}&text={encoded_msg}"
+                                    st.markdown(f"👉 **{row['Student_Name']}** ({row['Roll_No']}) -> [Click to Send WhatsApp Alert]({wa_link})")
                 else:
                     st.error("Mobile_No column missing.")
 
@@ -1272,6 +1347,62 @@ elif menu == "⚙️ ADMIN PORTAL":
                     f.write(uploaded_file.getbuffer())
                 st.session_state["student_data"] = process_data_excel(EXCEL_FILE_PATH)
                 st.success("Excel & SQLite Database Successfully Updated!")
+
+        # NEW FEATURE 1: AUDIT LOG VIEWER IN ADMIN UI
+        with st.expander("📋 11. AUDIT LOG VIEWER (PARENT SEARCH LOGS)", expanded=False):
+            if os.path.exists(LOG_FILE):
+                log_df = pd.read_csv(LOG_FILE)
+                st.dataframe(log_df, use_container_width=True)
+                
+                search_term = st.text_input("Filter Log by Name or Roll No:", key="log_search")
+                if search_term:
+                    filtered_logs = log_df[
+                        log_df['Student_Name'].astype(str).str.contains(search_term, case=False, na=False) |
+                        log_df['Roll_No'].astype(str).str.contains(search_term, case=False, na=False)
+                    ]
+                    st.write("**Filtered Search Results:**")
+                    st.dataframe(filtered_logs, use_container_width=True)
+
+                csv_bytes = log_df.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="📥 Export Audit Logs (CSV)",
+                    data=csv_bytes,
+                    file_name=f"Result_Search_AuditLogs_{datetime.now().strftime('%Y%m%d')}.csv",
+                    mime="text/csv"
+                )
+            else:
+                st.info("ℹ️ No parent search logs recorded yet.")
+
+        # NEW FEATURE 2: DATABASE BACKUP & RESTORE MANAGER
+        with st.expander("🗄️ 12. DATABASE BACKUP & RESTORE MANAGER", expanded=False):
+            b_col1, b_col2 = st.columns(2)
+            with b_col1:
+                st.subheader("📥 Download DB Snapshot")
+                if os.path.exists(DB_FILE):
+                    with open(DB_FILE, "rb") as f:
+                        db_bytes = f.read()
+                    st.download_button(
+                        label="💾 Download Current SQLite DB (.db)",
+                        data=db_bytes,
+                        file_name=f"school_database_snapshot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db",
+                        mime="application/x-sqlite3",
+                        use_container_width=True
+                    )
+                else:
+                    st.warning("No Database file found.")
+
+            with b_col2:
+                st.subheader("📤 Restore DB Snapshot")
+                restored_db_file = st.file_uploader("Upload Backup Database File (.db)", type=["db"], key="restore_db_file")
+                if st.button("⚠️ Restore Database Snapshot", use_container_width=True):
+                    if restored_db_file:
+                        if os.path.exists(DB_FILE):
+                            shutil.copyfile(DB_FILE, f"backups/pre_restore_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db")
+                        with open(DB_FILE, "wb") as f:
+                            f.write(restored_db_file.getbuffer())
+                        st.session_state["student_data"] = load_sqlite_to_df()
+                        st.success("✅ Database Snapshot successfully restored & loaded!")
+                        st.rerun()
 
 # Footer Text
 st.markdown("---")
