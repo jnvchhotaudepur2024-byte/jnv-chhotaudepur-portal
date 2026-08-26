@@ -109,7 +109,7 @@ st.markdown("""
 for folder in ["photos/students", "photos/gallery", "photos/board", "photos/system", "backups"]:
     os.makedirs(folder, exist_ok=True)
 
-# System Image Paths
+# System Image Paths & Files
 BG_PATH = "photos/system/background.png"
 LOGO_PATH = "photos/system/logo.png"
 CBSE_LOGO_PATH = "photos/system/cbse_logo.png"
@@ -118,6 +118,8 @@ SIGN_PATH = "photos/system/signature.png"
 NOTICES_FILE = "notices.json"
 BOARD_TOPPERS_FILE = "board_toppers.json"
 LOG_FILE = "result_logs.csv"
+DB_FILE = "school_database.db"
+EXCEL_FILE_PATH = "JNV_Student_Marks.xlsx"
 
 # Session State Initialization for Signature & Stamp Offsets
 if "sig_width" not in st.session_state:
@@ -134,9 +136,6 @@ if "sig_y_offset" not in st.session_state:
 # Password Hashing & Security Helper
 DEFAULT_PASS = "Jnvcu@me2"
 ADMIN_PASS_HASH = hashlib.sha256(st.secrets.get("ADMIN_PASSWORD", os.getenv("ADMIN_PASSWORD", DEFAULT_PASS)).encode()).hexdigest()
-
-DB_FILE = "school_database.db"
-EXCEL_FILE_PATH = "JNV_Student_Marks.xlsx"
 
 ALL_SUBJECTS = [
     'Gujarati', 'Hindi', 'English', 'Mathematics', 
@@ -301,7 +300,7 @@ def get_and_increment_visits():
 
 total_visits = get_and_increment_visits()
 
-# Database Handlers
+# Unified SQLite Database Initialization with Auto Migration
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
@@ -319,7 +318,11 @@ def init_db():
     cursor.execute("PRAGMA table_info(student_results)")
     existing_columns = [col[1] for col in cursor.fetchall()]
     
-    new_cols = [("Attendance", "TEXT"), ("Discipline", "TEXT"), ("Remarks", "TEXT"), ("Mother_Name", "TEXT"), ("School_Name", "TEXT")]
+    new_cols = [
+        ("Attendance", "TEXT"), ("Discipline", "TEXT"), 
+        ("Remarks", "TEXT"), ("Mother_Name", "TEXT"), 
+        ("School_Name", "TEXT")
+    ]
     for col_name, col_type in new_cols:
         if col_name not in existing_columns:
             try:
