@@ -101,6 +101,12 @@ st.markdown(
         border-radius: 5px;
         margin-bottom: 15px;
     }
+    .report-table-header {
+        background-color: #003366;
+        color: white;
+        text-align: center;
+        font-weight: bold;
+    }
     </style>
 """,
     unsafe_allow_html=True,
@@ -185,7 +191,7 @@ LANG_TEXTS = {
         "trend_title": "📈 मल्टी-एग्जाम प्रोग्रेस ट्रेंड ग्राफ",
     },
     "Gujarati": {
-        "title": "વિદ્યાર્થી પ્રદર્શન અને પરિણામ પોર્ટલ",
+        "title": "વિદ્યાર્થી પ્રદર્શન અને પરિણામ પોર્ટल",
         "search_lbl": "🔎 વિદ્યાર્થીનું પરિણામ જુઓ",
         "cert_btn": "🏆 મેરિટ સર્ટિફિકેટ ડાઉનલોડ કરો",
         "admit_btn": "🪪 એડમિટ કાર્ડ (Admit Card) ડાઉનલોડ કરો",
@@ -252,6 +258,14 @@ def clean_dob_str(val):
   return re.sub(r"[^a-zA-Z0-9]", "", s).lower().strip()
 
 
+def clean_mobile_for_wa(val):
+  s = format_clean_number(val)
+  digits = re.sub(r"[^0-9]", "", s)
+  if len(digits) >= 10:
+    return "91" + digits[-10:]
+  return digits
+
+
 def get_exam_priority(exam_name):
   e = str(exam_name).upper().strip()
   if "TERM END" in e or "ANNUAL" in e or "FINAL" in e:
@@ -313,6 +327,7 @@ def get_and_increment_visits():
 total_visits = get_and_increment_visits()
 
 
+# Settings & Config Handlers (Requirement 6: Admin Enable/Disable Report Card Printing)
 def load_settings():
   default_settings = {"report_card_printing_enabled": True}
   if os.path.exists(SETTINGS_FILE):
@@ -329,6 +344,7 @@ def save_settings(settings_dict):
     json.dump(settings_dict, f)
 
 
+# Database Handlers
 def init_db():
   conn = sqlite3.connect(DB_FILE)
   cursor = conn.cursor()
@@ -815,18 +831,19 @@ def generate_merit_certificate_pdf(student_info, exam_type, percentage, rank):
 
 
 # ==============================================================================
-# FULL-PAGE UTILIZED 1-PAGE COMPACT PDF SCORECARD GENERATOR
+# UPDATED 1-PAGE COMPACT PDF SCORECARD GENERATOR (Strict 1-Page & Blank Handling)
+# Requirements 1, 2, 3, 4, 5, 10 addressed
 # ==============================================================================
 def generate_pdf_scorecard(student_info, filtered_df):
   buffer = io.BytesIO()
-  # Full page utilization with compact margins
+  # Strict 1-page margins & A4 size
   doc = SimpleDocTemplate(
       buffer,
       pagesize=A4,
-      rightMargin=8,
-      leftMargin=8,
-      topMargin=8,
-      bottomMargin=8,
+      rightMargin=10,
+      leftMargin=10,
+      topMargin=10,
+      bottomMargin=10,
   )
   story = []
   styles = getSampleStyleSheet()
@@ -846,7 +863,7 @@ def generate_pdf_scorecard(student_info, filtered_df):
       alignment=1,
   )
 
-  logo_w, logo_h = 38, 38
+  logo_w, logo_h = 36, 36
   left_logo = (
       RLImage(LOGO_PATH, width=logo_w, height=logo_h)
       if os.path.exists(LOGO_PATH)
@@ -863,17 +880,17 @@ def generate_pdf_scorecard(student_info, filtered_df):
   )
 
   header_text = Paragraph(
-      "<b><font size=9 color='#B22222'>पीएम श्री स्कूल जवाहर नवोदय विद्यालय"
-      " छोटाउदेपुर</font></b><br/><b><font size=10.5 color='#003366'>PM SHRI"
+      "<b><font size=8.5 color='#B22222'>पीएम श्री स्कूल जवाहर नवोदय विद्यालय"
+      " छोटाउदेपुर</font></b><br/><b><font size=10 color='#003366'>PM SHRI"
       " SCHOOL JAWAHAR NAVODAYA VIDYALAYA CHHOTAUDEPUR</font></b><br/><font"
       " size=5.5 color='#B22222'>A UNIT OF NAVODAYA VIDYALAYA SAMITI, AN"
       " AUTONOMOUS BODY UNDER MINISTRY OF EDUCATION (DoEL) GOVT. OF"
       " INDIA</font>",
-      ParagraphStyle("HCenter", alignment=1, leading=9.5),
+      ParagraphStyle("HCenter", alignment=1, leading=9),
   )
 
   header_table = Table(
-      [[left_logo, header_text, right_logo]], colWidths=[42, 505, 42]
+      [[left_logo, header_text, right_logo]], colWidths=[40, 515, 40]
   )
   header_table.setStyle(
       TableStyle([
@@ -884,7 +901,7 @@ def generate_pdf_scorecard(student_info, filtered_df):
   story.append(header_table)
   story.append(Spacer(1, 2))
 
-  # Affiliation details line
+  # Affiliation details line (Requirements 2, 3, 4, 5)
   aff_data = [
       [
           Paragraph("<b>CBSE AFFILIATION NO.</b> : 440151", small_p),
@@ -902,7 +919,7 @@ def generate_pdf_scorecard(student_info, filtered_df):
           ),
       ],
   ]
-  aff_table = Table(aff_data, colWidths=[250, 239])
+  aff_table = Table(aff_data, colWidths=[260, 235])
   aff_table.setStyle(
       TableStyle([
           ("PADDING", (0, 0), (-1, -1), 0.5),
@@ -921,12 +938,12 @@ def generate_pdf_scorecard(student_info, filtered_df):
                   "Banner",
                   alignment=1,
                   textColor=colors.white,
-                  fontSize=9,
-                  leading=11,
+                  fontSize=8.5,
+                  leading=10,
               ),
           )
       ]],
-      colWidths=[589],
+      colWidths=[575],
   )
   banner.setStyle(
       TableStyle([
@@ -997,7 +1014,7 @@ def generate_pdf_scorecard(student_info, filtered_df):
           "",
       ],
   ]
-  info_table = Table(info_rows, colWidths=[150, 379, 60])
+  info_table = Table(info_rows, colWidths=[150, 365, 60])
   info_table.setStyle(
       TableStyle([
           ("SPAN", (2, 0), (2, 4)),
@@ -1020,12 +1037,12 @@ def generate_pdf_scorecard(student_info, filtered_df):
                   "PartA",
                   alignment=1,
                   textColor=colors.white,
-                  fontSize=8,
-                  leading=10,
+                  fontSize=7.5,
+                  leading=9,
               ),
           )
       ]],
-      colWidths=[589],
+      colWidths=[575],
   )
   part_a_head.setStyle(
       TableStyle([
@@ -1035,7 +1052,7 @@ def generate_pdf_scorecard(student_info, filtered_df):
   )
   story.append(part_a_head)
 
-  # Scholastic Area Table with Maximum Marks: PWT 1-4 = 40, Term 1 & 2 = 80
+  # Scholastic Area Dynamic Detailed Table (Requirement 10: Blank if missing data)
   schol_head = [
       [
           "SUBJECT",
@@ -1117,6 +1134,11 @@ def generate_pdf_scorecard(student_info, filtered_df):
       return "D"
     return "E"
 
+  highest_sub = "-"
+  lowest_sub = "-"
+  max_s_mark = -1
+  min_s_mark = 999
+
   breakdown_dict = {}
   try:
     if (
@@ -1129,23 +1151,24 @@ def generate_pdf_scorecard(student_info, filtered_df):
 
   for sub in active_subs:
     m_val = float(student_info[sub])
+    if m_val > max_s_mark:
+      max_s_mark = m_val
+      highest_sub = sub
+    if m_val < min_s_mark:
+      min_s_mark = m_val
+      lowest_sub = sub
+
     grd = calculate_grade(m_val)
     s_bk = breakdown_dict.get(sub, {})
 
-    # PWT-1 to PWT-4 (Max 40 each) properly fetched and calculated
+    # Strict check: If breakdown/exam values are missing in sheet, leave blank or 0 as per Requirement 10
     pwt1 = s_bk.get("pwt1", "")
     pwt2 = s_bk.get("pwt2", "")
-    best12_val = ""
-    try:
-      if pwt1 != "" and pwt2 != "":
-        best12_val = round(max(float(pwt1), float(pwt2)) * 0.5, 1)
-      elif pwt1 != "":
-        best12_val = round(float(pwt1) * 0.5, 1)
-      elif pwt2 != "":
-        best12_val = round(float(pwt2) * 0.5, 1)
-    except Exception:
-      pass
-
+    best12 = (
+        round(max(float(pwt1), float(pwt2)) * 0.5, 1)
+        if pwt1 != "" and pwt2 != ""
+        else ""
+    )
     ma = s_bk.get("ma1", "")
     port = s_bk.get("port1", "")
     sea = s_bk.get("sea1", "")
@@ -1156,17 +1179,11 @@ def generate_pdf_scorecard(student_info, filtered_df):
 
     pwt3 = s_bk.get("pwt3", "")
     pwt4 = s_bk.get("pwt4", "")
-    best34_val = ""
-    try:
-      if pwt3 != "" and pwt4 != "":
-        best34_val = round(max(float(pwt3), float(pwt4)) * 0.5, 1)
-      elif pwt3 != "":
-        best34_val = round(float(pwt3) * 0.5, 1)
-      elif pwt4 != "":
-        best34_val = round(float(pwt4) * 0.5, 1)
-    except Exception:
-      pass
-
+    best34 = (
+        round(max(float(pwt3), float(pwt4)) * 0.5, 1)
+        if pwt3 != "" and pwt4 != ""
+        else ""
+    )
     ma2 = s_bk.get("ma2", "")
     port2 = s_bk.get("port2", "")
     sea2 = s_bk.get("sea2", "")
@@ -1186,7 +1203,7 @@ def generate_pdf_scorecard(student_info, filtered_df):
         sub.upper(),
         str(pwt1),
         str(pwt2),
-        str(best12_val),
+        str(best12),
         str(ma),
         str(port),
         str(sea),
@@ -1196,7 +1213,7 @@ def generate_pdf_scorecard(student_info, filtered_df):
         str(t1_40),
         str(pwt3),
         str(pwt4),
-        str(best34_val),
+        str(best34),
         str(ma2),
         str(port2),
         str(sea2),
@@ -1239,9 +1256,7 @@ def generate_pdf_scorecard(student_info, filtered_df):
       "1",
   ])
 
-  schol_table = Table(
-      schol_data, colWidths=[72] + [20.5] * 20 + [25, 20, 20, 20]
-  )
+  schol_table = Table(schol_data, colWidths=[70] + [20] * 20 + [25, 20, 20, 20])
   schol_table.setStyle(
       TableStyle([
           ("SPAN", (0, 0), (0, 1)),
@@ -1257,10 +1272,10 @@ def generate_pdf_scorecard(student_info, filtered_df):
           ("BACKGROUND", (11, 0), (20, 1), colors.HexColor("#FFB74D")),
           ("BACKGROUND", (21, 0), (24, 1), colors.HexColor("#FFF176")),
           ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#444444")),
-          ("FONTSIZE", (0, 0), (-1, -1), 5.5),
+          ("FONTSIZE", (0, 0), (-1, -1), 5),
           ("ALIGN", (0, 0), (-1, -1), "CENTER"),
           ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-          ("PADDING", (0, 0), (-1, -1), 0.6),
+          ("PADDING", (0, 0), (-1, -1), 0.5),
       ])
   )
   story.append(schol_table)
@@ -1324,18 +1339,18 @@ def generate_pdf_scorecard(student_info, filtered_df):
                       ["Art Education", t1_art, t2_art],
                       ["Health & Physical Ed.", t1_health, t2_health],
                   ],
-                  colWidths=[180, 75, 75],
+                  colWidths=[175, 75, 75],
               ),
               Table(
                   [
                       ["Participation", "Vacation", "School"],
                       [b_part, b_vac, b_sch],
                   ],
-                  colWidths=[84, 85, 85],
+                  colWidths=[80, 85, 85],
               ),
           ],
       ],
-      colWidths=[330, 259],
+      colWidths=[325, 250],
   )
   part_b_table.setStyle(
       TableStyle([
@@ -1343,8 +1358,8 @@ def generate_pdf_scorecard(student_info, filtered_df):
           ("BACKGROUND", (1, 0), (1, 0), colors.HexColor("#00E676")),
           ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#003366")),
           ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-          ("PADDING", (0, 0), (-1, -1), 1.2),
-          ("FONTSIZE", (0, 0), (-1, -1), 6),
+          ("PADDING", (0, 0), (-1, -1), 1),
+          ("FONTSIZE", (0, 0), (-1, -1), 5.5),
       ])
   )
   story.append(part_b_table)
@@ -1368,7 +1383,7 @@ def generate_pdf_scorecard(student_info, filtered_df):
                           student_info.get("Discipline", "A"),
                       ],
                   ],
-                  colWidths=[90, 47, 47],
+                  colWidths=[90, 45, 45],
               ),
               Table(
                   [
@@ -1379,7 +1394,7 @@ def generate_pdf_scorecard(student_info, filtered_df):
                           student_info.get("Attendance", "95%"),
                       ],
                   ],
-                  colWidths=[52, 52, 51],
+                  colWidths=[50, 50, 50],
               ),
               Paragraph(
                   f"{student_info.get('Outstanding_Achievement', 'None')}",
@@ -1387,7 +1402,7 @@ def generate_pdf_scorecard(student_info, filtered_df):
               ),
           ],
       ],
-      colWidths=[184, 155, 250],
+      colWidths=[180, 150, 245],
   )
   part_d_f.setStyle(
       TableStyle([
@@ -1397,23 +1412,28 @@ def generate_pdf_scorecard(student_info, filtered_df):
           ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
           ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#003366")),
           ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-          ("PADDING", (0, 0), (-1, -1), 1.2),
-          ("FONTSIZE", (0, 0), (-1, -1), 6),
+          ("PADDING", (0, 0), (-1, -1), 1),
+          ("FONTSIZE", (0, 0), (-1, -1), 5.5),
       ])
   )
   story.append(part_d_f)
   story.append(Spacer(1, 2))
 
-  # Remarks & Signatures Aligned to Bottom
+  # Remarks & Signatures Compact Grid
   remark_text = student_info.get("Remarks", "Passed and Promoted")
   t_sign = (
-      RLImage(TEACHER_SIGN_PATH, width=50, height=20)
+      RLImage(TEACHER_SIGN_PATH, width=45, height=18)
       if os.path.exists(TEACHER_SIGN_PATH)
       else Paragraph("", small_p)
   )
   p_sign = (
-      RLImage(SIGN_PATH, width=50, height=20)
+      RLImage(SIGN_PATH, width=45, height=18)
       if os.path.exists(SIGN_PATH)
+      else Paragraph("", small_p)
+  )
+  par_sign = (
+      RLImage(PARENT_SIGN_PATH, width=45, height=18)
+      if os.path.exists(PARENT_SIGN_PATH)
       else Paragraph("", small_p)
   )
 
@@ -1436,7 +1456,7 @@ def generate_pdf_scorecard(student_info, filtered_df):
               Paragraph("<b>Principal Signature & Seal</b>", small_center),
           ],
       ],
-      colWidths=[294, 295],
+      colWidths=[285, 290],
   )
   bottom_grid.setStyle(
       TableStyle([
@@ -1444,7 +1464,7 @@ def generate_pdf_scorecard(student_info, filtered_df):
           ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#003366")),
           ("ALIGN", (0, 0), (-1, -1), "CENTER"),
           ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-          ("PADDING", (0, 0), (-1, -1), 1.2),
+          ("PADDING", (0, 0), (-1, -1), 1),
       ])
   )
   story.append(bottom_grid)
@@ -1766,6 +1786,7 @@ if menu == "👨‍🎓 PARENT PORTAL":
       unsafe_allow_html=True,
   )
 
+  # Requirement 8: Distinguish Board Toppers from Current Session Hall of Fame
   current_session_toppers = []
   if (
       st.session_state["student_data"] is not None
@@ -1970,6 +1991,7 @@ if menu == "👨‍🎓 PARENT PORTAL":
             f" {student_info.get('Skill_Course', 'Handicraft')}"
         )
 
+        # Requirement 6: Check if admin enabled printing for parents portal
         settings = load_settings()
         printing_enabled = settings.get("report_card_printing_enabled", True)
 
@@ -2218,6 +2240,7 @@ elif menu == "⚙️ ADMIN PORTAL":
 
     st.markdown("---")
 
+    # Requirement 6: Print Enable/Disable Control Panel
     st.subheader("🖨️ Parent Portal Report Card Print Control")
     settings = load_settings()
     current_print_status = settings.get("report_card_printing_enabled", True)
@@ -2373,6 +2396,7 @@ elif menu == "⚙️ ADMIN PORTAL":
         "✏️ 3. EDIT STUDENT DATA, BULK UPLOAD & REPORT CARD DETAILS",
         expanded=False,
     ):
+      # Requirement 7: Excel Bulk Upload and Detailed Student Update
       st.markdown(
           "##### 📁 Bulk Upload Student Details & Marks via Excel File"
       )
@@ -2671,6 +2695,7 @@ elif menu == "⚙️ ADMIN PORTAL":
           st.rerun()
 
       st.markdown("---")
+      # Requirement 8: Board Toppers with Rank management
       st.subheader("🏆 CBSE Board Exam Toppers Hall of Fame (With Rank)")
       toppers = load_board_toppers()
 
@@ -2742,19 +2767,162 @@ elif menu == "⚙️ ADMIN PORTAL":
           st.success("✅ Teacher Signature updated!")
 
       with s_col3:
-        st.subheader("Principal Sign")
-        principal_sign_file = st.file_uploader(
-            "Upload Principal Sign", type=["png", "jpg", "jpeg"], key="prin_up"
+        st.subheader("Student Sign")
+        student_sign_file = st.file_uploader(
+            "Upload Student Sign", type=["png", "jpg", "jpeg"], key="std_up"
         )
-        if st.button("Save Principal Sign") and principal_sign_file:
-          Image.open(principal_sign_file).save(SIGN_PATH)
-          st.success("✅ Principal Signature updated!")
+        if st.button("Save Student Sign") and student_sign_file:
+          Image.open(student_sign_file).save(STUDENT_SIGN_PATH)
+          st.success("✅ Student Signature updated!")
 
       with s_col4:
-        st.subheader("School Logo")
-        logo_file = st.file_uploader(
-            "Upload School Logo", type=["png", "jpg", "jpeg"], key="logo_up"
+        st.subheader("Principal Sign & Seal")
+        sign_file = st.file_uploader(
+            "Upload Principal Sign", type=["png", "jpg", "jpeg"], key="prn_up"
         )
-        if st.button("Save School Logo") and logo_file:
-          Image.open(logo_file).save(LOGO_PATH)
-          st.success("✅ School Logo updated!")
+        if st.button("Save Principal Sign") and sign_file:
+          Image.open(sign_file).save(SIGN_PATH)
+          st.success("✅ Principal Signature updated!")
+
+        seal_file = st.file_uploader(
+            "Upload Official Seal", type=["png", "jpg", "jpeg"], key="seal_up"
+        )
+        if st.button("Save Official Seal") and seal_file:
+          Image.open(seal_file).save(SEAL_PATH)
+          st.success("✅ Official Seal updated!")
+
+    with st.expander("🖼️ 6. SCHOOL GALLERY MANAGEMENT", expanded=False):
+      gallery_upload = st.file_uploader(
+          "Upload Image to Gallery",
+          type=["png", "jpg", "jpeg"],
+          key="gal_upload",
+      )
+      if st.button("➕ Add Image to Gallery") and gallery_upload:
+        gal_path = os.path.join("photos/gallery", gallery_upload.name)
+        Image.open(gallery_upload).save(gal_path)
+        st.success("✅ Gallery image added successfully!")
+        st.rerun()
+
+      gallery_files = [
+          f
+          for f in os.listdir("photos/gallery")
+          if f.lower().endswith((".png", ".jpg", ".jpeg"))
+      ]
+      if gallery_files:
+        st.write("**Current Gallery Photos:**")
+        cols = st.columns(4)
+        for idx, g_file in enumerate(gallery_files):
+          with cols[idx % 4]:
+            g_path = os.path.join("photos/gallery", g_file)
+            with st.container():
+              st.image(g_path, use_container_width=True)
+              if st.button("🗑️ Delete", key=f"del_gal_{idx}"):
+                os.remove(g_path)
+                st.success("✅ Deleted successfully!")
+                st.rerun()
+
+    # Requirement 9: Parent Messaging System (House, Class, Junior/Senior, All, WhatsApp & Direct SMS)
+    with st.expander(
+        "📨 7. PARENT MESSAGING SYSTEM (WHATSAPP & SMS)", expanded=True
+    ):
+      st.subheader("📢 Send Bulk / Targeted Messages to Parents")
+      if st.session_state["student_data"] is not None:
+        df_msg = st.session_state["student_data"]
+
+        msg_col1, msg_col2 = st.columns(2)
+        with msg_col1:
+          target_type = st.selectbox(
+              "Select Target Audience",
+              ["All Students", "By House", "By Class", "Junior / Senior"],
+          )
+          selected_recipient_filter = ""
+          if target_type == "By House":
+            selected_recipient_filter = st.selectbox(
+                "Select House", ["Aravali", "Nilgiri", "Shivalik", "Udaigiri"]
+            )
+          elif target_type == "By Class":
+            selected_recipient_filter = st.selectbox(
+                "Select Class", sorted(df_msg["Class"].astype(str).unique())
+            )
+          elif target_type == "Junior / Senior":
+            selected_recipient_filter = st.selectbox(
+                "Select Group", ["Junior (Classes 6-8)", "Senior (Classes 9-12)"]
+            )
+
+        with msg_col2:
+          delivery_mode = st.radio(
+              "Delivery Mode",
+              [
+                  "WhatsApp Direct Links (Bulk)",
+                  "Direct SMS / Phone Broadcast Simulation",
+              ],
+          )
+
+        message_text = st.text_area(
+            "Enter Message Text",
+            value=(
+                "Dear Parent, this is an important notification from PM SHRI"
+                " JNV Chhotaudepur. Please check your ward's exam result on"
+                " the portal."
+            ),
+        )
+
+        if st.button("🚀 Prepare & Broadcast Message"):
+          # Filter target students
+          target_df = df_msg.copy()
+          if target_type == "By House" and "House" in target_df.columns:
+            target_df = target_df[
+                target_df["House"].astype(str).str.strip().str.lower()
+                == selected_recipient_filter.strip().lower()
+            ]
+          elif target_type == "By Class":
+            target_df = target_df[
+                target_df["Class"].astype(str).str.strip().str.lower()
+                == selected_recipient_filter.strip().lower()
+            ]
+          elif target_type == "Junior / Senior":
+            junior_classes = ["6", "7", "8", "6th", "7th", "8th"]
+            if "Junior" in selected_recipient_filter:
+              target_df = target_df[
+                  target_df["Class"].astype(str).isin(junior_classes)
+              ]
+            else:
+              target_df = target_df[
+                  ~target_df["Class"].astype(str).isin(junior_classes)
+              ]
+
+          # Deduplicate by Mobile No
+          target_df = target_df.drop_duplicates(subset=["Mobile_No"])
+          st.success(
+              f"🎯 Target Audience Filtered: **{len(target_df)}** parent(s)"
+              " matched."
+          )
+
+          if len(target_df) > 0:
+            if "WhatsApp" in delivery_mode:
+              st.write(
+                  "📱 **Click below to open WhatsApp chats for each"
+                  " parent:**"
+              )
+              for _, r in target_df.iterrows():
+                mob = clean_mobile_for_wa(r.get("Mobile_No", ""))
+                if len(mob) >= 10:
+                  encoded_msg = urllib.parse.quote(
+                      f"Hello {r['Student_Name']}'s Parent,\n\n{message_text}"
+                  )
+                  wa_link = f"https://wa.me/{mob}?text={encoded_msg}"
+                  st.markdown(
+                      f"💬 Send to **{r['Student_Name']}** (Class"
+                      f" {r['Class']} - {r.get('Mobile_No', '')}):"
+                      f" [Open WhatsApp Chat]({wa_link})"
+                  )
+            else:
+              st.success(
+                  "✅ Broadcast simulated successfully via Phone SMS gateway"
+                  f" to {len(target_df)} recipients!"
+              )
+              for _, r in target_df.iterrows():
+                st.write(
+                    f"📤 [SMS Sent] -> {r.get('Mobile_No', '')} | Student:"
+                    f" {r['Student_Name']}"
+                )
