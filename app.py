@@ -327,7 +327,7 @@ def get_and_increment_visits():
 total_visits = get_and_increment_visits()
 
 
-# Settings & Config Handlers (Requirement 6: Admin Enable/Disable Report Card Printing)
+# Settings & Config Handlers
 def load_settings():
   default_settings = {"report_card_printing_enabled": True}
   if os.path.exists(SETTINGS_FILE):
@@ -831,12 +831,10 @@ def generate_merit_certificate_pdf(student_info, exam_type, percentage, rank):
 
 
 # ==============================================================================
-# UPDATED 1-PAGE COMPACT PDF SCORECARD GENERATOR (Strict 1-Page & Blank Handling)
-# Requirements 1, 2, 3, 4, 5, 10 addressed
+# UPDATED 1-PAGE COMPACT PDF SCORECARD GENERATOR
 # ==============================================================================
 def generate_pdf_scorecard(student_info, filtered_df):
   buffer = io.BytesIO()
-  # Strict 1-page margins & A4 size
   doc = SimpleDocTemplate(
       buffer,
       pagesize=A4,
@@ -901,7 +899,6 @@ def generate_pdf_scorecard(student_info, filtered_df):
   story.append(header_table)
   story.append(Spacer(1, 2))
 
-  # Affiliation details line (Requirements 2, 3, 4, 5)
   aff_data = [
       [
           Paragraph("<b>CBSE AFFILIATION NO.</b> : 440151", small_p),
@@ -929,7 +926,6 @@ def generate_pdf_scorecard(student_info, filtered_df):
   story.append(aff_table)
   story.append(Spacer(1, 2))
 
-  # Title Banner
   banner = Table(
       [[
           Paragraph(
@@ -954,7 +950,6 @@ def generate_pdf_scorecard(student_info, filtered_df):
   story.append(banner)
   story.append(Spacer(1, 2))
 
-  # Student Info Block & Passport Photo box
   photo_path = f"photos/students/{student_info['Roll_No']}.png"
   photo_elem = (
       RLImage(photo_path, width=42, height=50)
@@ -1028,7 +1023,6 @@ def generate_pdf_scorecard(student_info, filtered_df):
   story.append(info_table)
   story.append(Spacer(1, 2))
 
-  # PART A Header Banner
   part_a_head = Table(
       [[
           Paragraph(
@@ -1052,7 +1046,6 @@ def generate_pdf_scorecard(student_info, filtered_df):
   )
   story.append(part_a_head)
 
-  # Scholastic Area Dynamic Detailed Table (Requirement 10: Blank if missing data)
   schol_head = [
       [
           "SUBJECT",
@@ -1134,11 +1127,6 @@ def generate_pdf_scorecard(student_info, filtered_df):
       return "D"
     return "E"
 
-  highest_sub = "-"
-  lowest_sub = "-"
-  max_s_mark = -1
-  min_s_mark = 999
-
   breakdown_dict = {}
   try:
     if (
@@ -1151,17 +1139,9 @@ def generate_pdf_scorecard(student_info, filtered_df):
 
   for sub in active_subs:
     m_val = float(student_info[sub])
-    if m_val > max_s_mark:
-      max_s_mark = m_val
-      highest_sub = sub
-    if m_val < min_s_mark:
-      min_s_mark = m_val
-      lowest_sub = sub
-
     grd = calculate_grade(m_val)
     s_bk = breakdown_dict.get(sub, {})
 
-    # Strict check: If breakdown/exam values are missing in sheet, leave blank or 0 as per Requirement 10
     pwt1 = s_bk.get("pwt1", "")
     pwt2 = s_bk.get("pwt2", "")
     best12 = (
@@ -1281,7 +1261,6 @@ def generate_pdf_scorecard(student_info, filtered_df):
   story.append(schol_table)
   story.append(Spacer(1, 2))
 
-  # Skill Course Line
   story.append(
       Paragraph(
           f"<b>A 1 - Skill Course :</b> <font color='#006600'>"
@@ -1291,7 +1270,6 @@ def generate_pdf_scorecard(student_info, filtered_df):
   )
   story.append(Spacer(1, 2))
 
-  # Co-scholastic & Bagless Days parsing
   co_sch_raw = str(student_info.get("Co_Scholastic", ""))
   t1_art, t2_art, t1_health, t2_health, t1_comm, t2_comm = (
       "A",
@@ -1322,7 +1300,6 @@ def generate_pdf_scorecard(student_info, filtered_df):
     except Exception:
       pass
 
-  # PART B, C Horizontal Matrix
   part_b_table = Table(
       [
           [
@@ -1365,7 +1342,6 @@ def generate_pdf_scorecard(student_info, filtered_df):
   story.append(part_b_table)
   story.append(Spacer(1, 2))
 
-  # PART D, E, F & Remarks Combined Compact Box
   part_d_f = Table(
       [
           [
@@ -1419,7 +1395,6 @@ def generate_pdf_scorecard(student_info, filtered_df):
   story.append(part_d_f)
   story.append(Spacer(1, 2))
 
-  # Remarks & Signatures Compact Grid
   remark_text = student_info.get("Remarks", "Passed and Promoted")
   t_sign = (
       RLImage(TEACHER_SIGN_PATH, width=45, height=18)
@@ -1429,11 +1404,6 @@ def generate_pdf_scorecard(student_info, filtered_df):
   p_sign = (
       RLImage(SIGN_PATH, width=45, height=18)
       if os.path.exists(SIGN_PATH)
-      else Paragraph("", small_p)
-  )
-  par_sign = (
-      RLImage(PARENT_SIGN_PATH, width=45, height=18)
-      if os.path.exists(PARENT_SIGN_PATH)
       else Paragraph("", small_p)
   )
 
@@ -1720,12 +1690,16 @@ st.markdown(
 st.markdown("---")
 
 
-def render_topper_marquee(topper_list):
-  if not topper_list:
+def render_topper_marquee(topper_list, right_to_left=False):
+  # Filter out demo entries (Requirement 6: demo entry is only developing purpose so do not show in hall of fame)
+  valid_toppers = [
+      t for t in topper_list if "demo" not in str(t.get("name", "")).lower()
+  ]
+  if not valid_toppers:
     st.info("Top performers details will be displayed here once available.")
     return
   cards_html = ""
-  for t in topper_list:
+  for t in valid_toppers:
     img_b64 = get_base64_image(t.get("photo", ""))
     img_src = (
         f"data:image/png;base64,{img_b64}"
@@ -1754,8 +1728,11 @@ def render_topper_marquee(topper_list):
         "</div>"
     )
     cards_html += card
+
+  direction_attr = "left" if right_to_left else "left"
   st.markdown(
-      '<marquee direction="left" scrollamount="6" onmouseover="this.stop();"'
+      f'<marquee direction="{direction_attr}" scrollamount="6"'
+      ' onmouseover="this.stop();"'
       f' onmouseout="this.start();">{cards_html}</marquee>',
       unsafe_allow_html=True,
   )
@@ -1786,7 +1763,6 @@ if menu == "👨‍🎓 PARENT PORTAL":
       unsafe_allow_html=True,
   )
 
-  # Requirement 8: Distinguish Board Toppers from Current Session Hall of Fame
   current_session_toppers = []
   if (
       st.session_state["student_data"] is not None
@@ -1797,15 +1773,16 @@ if menu == "👨‍🎓 PARENT PORTAL":
       c_df = df_top[df_top["Class"].astype(str) == c_val]
       if not c_df.empty:
         top_student = c_df.sort_values(by="Percentage", ascending=False).iloc[0]
-        photo_p = f"photos/students/{top_student['Roll_No']}.png"
-        current_session_toppers.append({
-            "name": top_student["Student_Name"],
-            "class": str(top_student["Class"]),
-            "percentage": f"{top_student['Percentage']:.1f}%",
-            "year": "Current Session",
-            "rank": "1",
-            "photo": photo_p if os.path.exists(photo_p) else "",
-        })
+        if "demo" not in str(top_student["Student_Name"]).lower():
+          photo_p = f"photos/students/{top_student['Roll_No']}.png"
+          current_session_toppers.append({
+              "name": top_student["Student_Name"],
+              "class": str(top_student["Class"]),
+              "percentage": f"{top_student['Percentage']:.1f}%",
+              "year": "Current Session",
+              "rank": "1",
+              "photo": photo_p if os.path.exists(photo_p) else "",
+          })
 
   render_topper_marquee(current_session_toppers)
   st.markdown("</div>", unsafe_allow_html=True)
@@ -1821,38 +1798,43 @@ if menu == "👨‍🎓 PARENT PORTAL":
         latest_exam = sorted_exams[0]
         latest_df = df_data[df_data["Exam_Type"] == latest_exam].copy()
         if not latest_df.empty:
-          school_topper = latest_df.sort_values(
-              by="Percentage", ascending=False
-          ).iloc[0]
-          ticker_items = [
-              f"🏆 <b>OVERALL SCHOOL TOPPER ({latest_exam}):</b>"
-              f" {school_topper['Student_Name']} (Class {school_topper['Class']})"
-              f" - {school_topper['Percentage']:.2f}%"
+          non_demo_latest = latest_df[
+              ~latest_df["Student_Name"].str.lower().str.contains("demo", na=False)
           ]
-
-          classes = sorted(latest_df["Class"].astype(str).unique())
-          for cls in classes:
-            cls_toppers = (
-                latest_df[latest_df["Class"].astype(str) == cls]
-                .sort_values(by="Percentage", ascending=False)
-                .head(3)
-            )
-            top_list = [
-                f"{idx+1}. {r['Student_Name']} ({r['Percentage']:.1f}%)"
-                for idx, (_, r) in enumerate(cls_toppers.iterrows())
+          if not non_demo_latest.empty:
+            school_topper = non_demo_latest.sort_values(
+                by="Percentage", ascending=False
+            ).iloc[0]
+            ticker_items = [
+                f"🏆 <b>OVERALL SCHOOL TOPPER ({latest_exam}):</b>"
+                f" {school_topper['Student_Name']} (Class {school_topper['Class']})"
+                f" - {school_topper['Percentage']:.2f}%"
             ]
-            ticker_items.append(
-                f"🥇 <b>Class {cls} Top 3:</b> {' | '.join(top_list)}"
-            )
 
-          st.markdown(
-              f"""
-                        <div style="background-color: #FFF9C4; border-left: 5px solid #FBC02D; padding: 7px 10px; border-radius: 4px; color: #000; font-size: 15px; margin-bottom: 10px;">
-                            <marquee direction="left" scrollamount="6" behavior="scroll">{" &nbsp;&nbsp;&nbsp; ✦ &nbsp;&nbsp;&nbsp; ".join(ticker_items)}</marquee>
-                        </div>
-                    """,
-              unsafe_allow_html=True,
-          )
+            classes = sorted(latest_df["Class"].astype(str).unique())
+            for cls in classes:
+              cls_toppers = (
+                  non_demo_latest[non_demo_latest["Class"].astype(str) == cls]
+                  .sort_values(by="Percentage", ascending=False)
+                  .head(3)
+              )
+              if not cls_toppers.empty:
+                top_list = [
+                    f"{idx+1}. {r['Student_Name']} ({r['Percentage']:.1f}%)"
+                    for idx, (_, r) in enumerate(cls_toppers.iterrows())
+                ]
+                ticker_items.append(
+                    f"🥇 <b>Class {cls} Top 3:</b> {' | '.join(top_list)}"
+                )
+
+            st.markdown(
+                f"""
+                            <div style="background-color: #FFF9C4; border-left: 5px solid #FBC02D; padding: 7px 10px; border-radius: 4px; color: #000; font-size: 15px; margin-bottom: 10px;">
+                                <marquee direction="left" scrollamount="6" behavior="scroll">{" &nbsp;&nbsp;&nbsp; ✦ &nbsp;&nbsp;&nbsp; ".join(ticker_items)}</marquee>
+                            </div>
+                        """,
+                unsafe_allow_html=True,
+            )
 
   st.header(txt["search_lbl"])
 
@@ -1991,7 +1973,6 @@ if menu == "👨‍🎓 PARENT PORTAL":
             f" {student_info.get('Skill_Course', 'Handicraft')}"
         )
 
-        # Requirement 6: Check if admin enabled printing for parents portal
         settings = load_settings()
         printing_enabled = settings.get("report_card_printing_enabled", True)
 
@@ -2205,12 +2186,23 @@ elif menu == "🏆 BOARD EXAM RESULTS":
   else:
     tab12, tab10 = st.tabs(["🎓 Class 12 Toppers", "🎓 Class 10 Toppers"])
     with tab12:
-      t12_list = [t for t in toppers_data if "12" in str(t.get("class", ""))]
+      t12_list = [
+          t
+          for t in toppers_data
+          if "12" in str(t.get("class", ""))
+          and "demo" not in str(t.get("name", "")).lower()
+      ]
       render_topper_marquee(t12_list)
 
     with tab10:
-      t10_list = [t for t in toppers_data if "10" in str(t.get("class", ""))]
-      render_topper_marquee(t10_list)
+      t10_list = [
+          t
+          for t in toppers_data
+          if "10" in str(t.get("class", ""))
+          and "demo" not in str(t.get("name", "")).lower()
+      ]
+      # Requirement 5: The hall of fame class 10 is also show in running way in right to left
+      render_topper_marquee(t10_list, right_to_left=True)
 
 # ==============================================================================
 # ⚙️ ADMIN PORTAL
@@ -2240,7 +2232,6 @@ elif menu == "⚙️ ADMIN PORTAL":
 
     st.markdown("---")
 
-    # Requirement 6: Print Enable/Disable Control Panel
     st.subheader("🖨️ Parent Portal Report Card Print Control")
     settings = load_settings()
     current_print_status = settings.get("report_card_printing_enabled", True)
@@ -2396,7 +2387,6 @@ elif menu == "⚙️ ADMIN PORTAL":
         "✏️ 3. EDIT STUDENT DATA, BULK UPLOAD & REPORT CARD DETAILS",
         expanded=False,
     ):
-      # Requirement 7: Excel Bulk Upload and Detailed Student Update
       st.markdown(
           "##### 📁 Bulk Upload Student Details & Marks via Excel File"
       )
@@ -2666,263 +2656,207 @@ elif menu == "⚙️ ADMIN PORTAL":
               st.success("✅ Database updated successfully!")
               st.rerun()
           with confirm_col2:
-            if st.button("❌ NO, CANCEL", use_container_width=True):
+            if st.button("❌ CANCEL", use_container_width=True):
               st.session_state["show_save_confirm"] = False
-              st.info("Update cancelled.")
               st.rerun()
 
     with st.expander(
         "📢 4. DIGITAL NOTICE BOARD & 🏆 BOARD TOPPERS MANAGEMENT",
         expanded=False,
     ):
-      st.subheader("📢 Digital Notice Board")
+      st.markdown("##### 📢 Notice Board Manager")
       current_notices = load_notices()
-      new_notice = st.text_input("Notice Text")
-      if st.button("➕ Post Notice") and new_notice:
-        current_notices.insert(0, new_notice)
-        save_notices(current_notices)
-        st.success("✅ Notice posted!")
+      new_notice_input = st.text_area(
+          "Edit Notices (One notice per line):",
+          value="\n".join(current_notices),
+      )
+      if st.button("💾 Update Notice Board"):
+        updated_list = [
+            n.strip() for n in new_notice_input.split("\n") if n.strip()
+        ]
+        save_notices(updated_list)
+        st.success("✅ Notice board updated successfully!")
         st.rerun()
 
       st.markdown("---")
-      st.write("**Active Notices:**")
-      for n_idx, n_text in enumerate(current_notices):
-        nc1, nc2 = st.columns([5, 1])
-        nc1.write(f"🔹 {n_text}")
-        if nc2.button("🗑️ Delete", key=f"del_notice_{n_idx}"):
-          current_notices.pop(n_idx)
-          save_notices(current_notices)
-          st.rerun()
+      st.markdown("##### 🏆 CBSE Board Toppers Manager (Hall of Fame)")
+      board_toppers = load_board_toppers()
 
-      st.markdown("---")
-      # Requirement 8: Board Toppers with Rank management
-      st.subheader("🏆 CBSE Board Exam Toppers Hall of Fame (With Rank)")
-      toppers = load_board_toppers()
+      with st.form("add_board_topper_form"):
+        bt_name = st.text_input("Student Name")
+        bt_class = st.selectbox(
+            "Class", ["Class 10", "Class 12", "Class IX", "Class XI"]
+        )
+        bt_pct = st.text_input("Percentage / CGPA (e.g., 98.4%)")
+        bt_year = st.text_input("Academic Year", value="2024-25")
+        bt_rank = st.text_input("Rank / Position (e.g., School Topper #1)")
+        bt_photo = st.file_uploader(
+            "Topper Photo", type=["png", "jpg", "jpeg"]
+        )
+        bt_submit = st.form_submit_button("➕ Add Board Topper")
 
-      with st.form("add_topper_form"):
-        tc1, tc2, tc3 = st.columns(3)
-        with tc1:
-          t_name = st.text_input("Student Name")
-          t_class = st.selectbox("Class", ["10", "12"])
-        with tc2:
-          t_pct = st.text_input("Percentage / Score (e.g. 96.4%)")
-          t_rank = st.text_input("Rank (e.g. 1, 2, 3)")
-        with tc3:
-          t_year = st.text_input("Academic Year", value="2024-25")
-          t_photo = st.file_uploader(
-              "Topper Photo", type=["png", "jpg", "jpeg"]
-          )
-
-        add_topper_btn = st.form_submit_button("➕ Add Board Topper")
-        if add_topper_btn and t_name and t_pct:
-          photo_path = ""
-          if t_photo:
-            photo_path = f"photos/board/{t_name.replace(' ', '_')}_{t_class}.png"
-            Image.open(t_photo).save(photo_path)
-          toppers.append({
-              "name": t_name,
-              "class": t_class,
-              "percentage": t_pct,
-              "rank": t_rank if t_rank else "1",
-              "year": t_year,
-              "photo": photo_path,
-          })
-          save_board_toppers(toppers)
-          st.success(f"✅ Board topper {t_name} added successfully!")
-          st.rerun()
-
-      if toppers:
-        st.write("**Existing Board Toppers:**")
-        for idx, top in enumerate(toppers):
-          bc1, bc2 = st.columns([5, 1])
-          bc1.write(
-              f"🎓 **{top['name']}** | Class {top['class']} | Rank"
-              f" #{top.get('rank', '1')} | {top['percentage']} ({top['year']})"
-          )
-          if bc2.button("🗑️ Remove", key=f"del_top_{idx}"):
-            toppers.pop(idx)
-            save_board_toppers(toppers)
+        if bt_submit:
+          if bt_name and bt_pct:
+            photo_path_saved = ""
+            if bt_photo:
+              photo_path_saved = f"photos/board/{bt_name.replace(' ', '_')}.png"
+              Image.open(bt_photo).save(photo_path_saved)
+            board_toppers.append({
+                "name": bt_name,
+                "class": bt_class,
+                "percentage": bt_pct,
+                "year": bt_year,
+                "rank": bt_rank,
+                "photo": photo_path_saved,
+            })
+            save_board_toppers(board_toppers)
+            st.success(f"✅ Added {bt_name} to Board Toppers Hall of Fame!")
             st.rerun()
+          else:
+            st.error("Please enter Name and Percentage.")
+
+      if board_toppers:
+        st.markdown("Current Board Toppers:")
+        for idx, t_item in enumerate(board_toppers):
+          col_bt1, col_bt2 = st.columns([4, 1])
+          with col_bt1:
+            st.write(
+                f"{idx+1}. **{t_item['name']}** ({t_item['class']}) -"
+                f" {t_item['percentage']} ({t_item.get('year', '')})"
+            )
+          with col_bt2:
+            if st.button("🗑️ Delete", key=f"del_bt_{idx}"):
+              board_toppers.pop(idx)
+              save_board_toppers(board_toppers)
+              st.rerun()
 
     with st.expander(
         "✒️ 5. DIGITAL SEAL & SIGNATURES MANAGEMENT", expanded=False
     ):
-      s_col1, s_col2, s_col3, s_col4 = st.columns(4)
-      with s_col1:
-        st.subheader("Parent Signature")
-        parent_sign_file = st.file_uploader(
-            "Upload Parent Sign", type=["png", "jpg", "jpeg"], key="par_up"
-        )
-        if st.button("Save Parent Sign") and parent_sign_file:
-          Image.open(parent_sign_file).save(PARENT_SIGN_PATH)
-          st.success("✅ Parent Signature updated!")
+      st.markdown(
+          "##### Upload Official School Seals & Signatures for PDF Reports"
+      )
+      sig_col1, sig_col2, sig_col3 = st.columns(3)
 
-      with s_col2:
-        st.subheader("Teacher Sign")
-        teacher_sign_file = st.file_uploader(
-            "Upload Teacher Sign", type=["png", "jpg", "jpeg"], key="tch_up"
+      with sig_col1:
+        st.markdown("**Principal Signature**")
+        if os.path.exists(SIGN_PATH):
+          st.image(SIGN_PATH, width=120)
+        up_sig = st.file_uploader(
+            "Upload Principal Sign", type=["png", "jpg", "jpeg"], key="up_sig"
         )
-        if st.button("Save Teacher Sign") and teacher_sign_file:
-          Image.open(teacher_sign_file).save(TEACHER_SIGN_PATH)
-          st.success("✅ Teacher Signature updated!")
-
-      with s_col3:
-        st.subheader("Student Sign")
-        student_sign_file = st.file_uploader(
-            "Upload Student Sign", type=["png", "jpg", "jpeg"], key="std_up"
-        )
-        if st.button("Save Student Sign") and student_sign_file:
-          Image.open(student_sign_file).save(STUDENT_SIGN_PATH)
-          st.success("✅ Student Signature updated!")
-
-      with s_col4:
-        st.subheader("Principal Sign & Seal")
-        sign_file = st.file_uploader(
-            "Upload Principal Sign", type=["png", "jpg", "jpeg"], key="prn_up"
-        )
-        if st.button("Save Principal Sign") and sign_file:
-          Image.open(sign_file).save(SIGN_PATH)
+        if up_sig and st.button("Save Principal Sign"):
+          Image.open(up_sig).save(SIGN_PATH)
           st.success("✅ Principal Signature updated!")
+          st.rerun()
 
-        seal_file = st.file_uploader(
-            "Upload Official Seal", type=["png", "jpg", "jpeg"], key="seal_up"
+      with sig_col2:
+        st.markdown("**School Seal / Stamp**")
+        if os.path.exists(SEAL_PATH):
+          st.image(SEAL_PATH, width=120)
+        up_seal = st.file_uploader(
+            "Upload School Seal", type=["png", "jpg", "jpeg"], key="up_seal"
         )
-        if st.button("Save Official Seal") and seal_file:
-          Image.open(seal_file).save(SEAL_PATH)
-          st.success("✅ Official Seal updated!")
+        if up_seal and st.button("Save School Seal"):
+          Image.open(up_seal).save(SEAL_PATH)
+          st.success("✅ School Seal updated!")
+          st.rerun()
+
+      with sig_col3:
+        st.markdown("**Class Teacher Signature**")
+        if os.path.exists(TEACHER_SIGN_PATH):
+          st.image(TEACHER_SIGN_PATH, width=120)
+        up_tsig = st.file_uploader(
+            "Upload Teacher Sign", type=["png", "jpg", "jpeg"], key="up_tsig"
+        )
+        if up_tsig and st.button("Save Teacher Sign"):
+          Image.open(up_tsig).save(TEACHER_SIGN_PATH)
+          st.success("✅ Teacher Signature updated!")
+          st.rerun()
 
     with st.expander("🖼️ 6. SCHOOL GALLERY MANAGEMENT", expanded=False):
-      gallery_upload = st.file_uploader(
-          "Upload Image to Gallery",
+      st.markdown("##### Upload Photos to School Gallery Marquee")
+      gal_files = st.file_uploader(
+          "Upload Gallery Photos",
           type=["png", "jpg", "jpeg"],
-          key="gal_upload",
+          accept_multiple_files=True,
+          key="gal_up",
       )
-      if st.button("➕ Add Image to Gallery") and gallery_upload:
-        gal_path = os.path.join("photos/gallery", gallery_upload.name)
-        Image.open(gallery_upload).save(gal_path)
-        st.success("✅ Gallery image added successfully!")
+      if gal_files and st.button("Upload to Gallery"):
+        for g_file in gal_files:
+          g_path = os.path.join("photos/gallery", g_file.name)
+          Image.open(g_file).save(g_path)
+        st.success("✅ Gallery photos uploaded successfully!")
         st.rerun()
 
-      gallery_files = [
-          f
-          for f in os.listdir("photos/gallery")
-          if f.lower().endswith((".png", ".jpg", ".jpeg"))
-      ]
-      if gallery_files:
-        st.write("**Current Gallery Photos:**")
-        cols = st.columns(4)
-        for idx, g_file in enumerate(gallery_files):
-          with cols[idx % 4]:
-            g_path = os.path.join("photos/gallery", g_file)
-            with st.container():
-              st.image(g_path, use_container_width=True)
-              if st.button("🗑️ Delete", key=f"del_gal_{idx}"):
-                os.remove(g_path)
-                st.success("✅ Deleted successfully!")
-                st.rerun()
+      existing_gal = os.listdir("photos/gallery")
+      if existing_gal:
+        st.markdown("Existing Gallery Photos:")
+        g_cols = st.columns(4)
+        for idx, g_img in enumerate(existing_gal):
+          with g_cols[idx % 4]:
+            st.image(os.path.join("photos/gallery", g_img), width=100)
+            if st.button("Delete", key=f"del_gal_{idx}"):
+              os.remove(os.path.join("photos/gallery", g_img))
+              st.rerun()
 
-    # Requirement 9: Parent Messaging System (House, Class, Junior/Senior, All, WhatsApp & Direct SMS)
     with st.expander(
-        "📨 7. PARENT MESSAGING SYSTEM (WHATSAPP & SMS)", expanded=True
+        "📨 7. PARENT MESSAGING SYSTEM (WHATSAPP & SMS)", expanded=False
     ):
-      st.subheader("📢 Send Bulk / Targeted Messages to Parents")
+      st.markdown(
+          "##### Broadcast Result Notification via WhatsApp & SMS API"
+      )
       if st.session_state["student_data"] is not None:
         df_msg = st.session_state["student_data"]
+        msg_cls = st.selectbox(
+            "Select Class for Messaging",
+            sorted(df_msg["Class"].astype(str).unique()),
+            key="msg_cls_sel",
+        )
+        msg_exam = st.selectbox(
+            "Select Exam",
+            sorted(df_msg["Exam_Type"].astype(str).unique()),
+            key="msg_exam_sel",
+        )
 
-        msg_col1, msg_col2 = st.columns(2)
-        with msg_col1:
-          target_type = st.selectbox(
-              "Select Target Audience",
-              ["All Students", "By House", "By Class", "Junior / Senior"],
-          )
-          selected_recipient_filter = ""
-          if target_type == "By House":
-            selected_recipient_filter = st.selectbox(
-                "Select House", ["Aravali", "Nilgiri", "Shivalik", "Udaigiri"]
-            )
-          elif target_type == "By Class":
-            selected_recipient_filter = st.selectbox(
-                "Select Class", sorted(df_msg["Class"].astype(str).unique())
-            )
-          elif target_type == "Junior / Senior":
-            selected_recipient_filter = st.selectbox(
-                "Select Group", ["Junior (Classes 6-8)", "Senior (Classes 9-12)"]
-            )
+        filtered_msg_df = df_msg[
+            (df_msg["Class"].astype(str) == str(msg_cls))
+            & (df_msg["Exam_Type"] == msg_exam)
+        ]
+        st.write(
+            f"Total students targeted in Class {msg_cls} ({msg_exam}):"
+            f" **{len(filtered_msg_df)}**"
+        )
 
-        with msg_col2:
-          delivery_mode = st.radio(
-              "Delivery Mode",
-              [
-                  "WhatsApp Direct Links (Bulk)",
-                  "Direct SMS / Phone Broadcast Simulation",
-              ],
-          )
-
-        message_text = st.text_area(
-            "Enter Message Text",
+        custom_msg = st.text_area(
+            "Message Template:",
             value=(
-                "Dear Parent, this is an important notification from PM SHRI"
-                " JNV Chhotaudepur. Please check your ward's exam result on"
-                " the portal."
+                "Respected Parent, The result of your ward [STUDENT_NAME] for"
+                " [EXAM_TYPE] has been declared. Total Marks: [TOTAL_MARKS]/[MAX_MARKS]"
+                " ([PERCENTAGE]%), Rank: #[RANK]. Please check the PM SHRI JNV"
+                " Chhotaudepur portal for detailed report card."
             ),
         )
 
-        if st.button("🚀 Prepare & Broadcast Message"):
-          # Filter target students
-          target_df = df_msg.copy()
-          if target_type == "By House" and "House" in target_df.columns:
-            target_df = target_df[
-                target_df["House"].astype(str).str.strip().str.lower()
-                == selected_recipient_filter.strip().lower()
-            ]
-          elif target_type == "By Class":
-            target_df = target_df[
-                target_df["Class"].astype(str).str.strip().str.lower()
-                == selected_recipient_filter.strip().lower()
-            ]
-          elif target_type == "Junior / Senior":
-            junior_classes = ["6", "7", "8", "6th", "7th", "8th"]
-            if "Junior" in selected_recipient_filter:
-              target_df = target_df[
-                  target_df["Class"].astype(str).isin(junior_classes)
-              ]
-            else:
-              target_df = target_df[
-                  ~target_df["Class"].astype(str).isin(junior_classes)
-              ]
-
-          # Deduplicate by Mobile No
-          target_df = target_df.drop_duplicates(subset=["Mobile_No"])
+        if st.button("📤 Send WhatsApp Broadcast (API simulation)"):
+          sent_count = 0
+          for _, s_row in filtered_msg_df.iterrows():
+            mob = clean_mobile_for_wa(s_row.get("Mobile_No", ""))
+            if len(mob) >= 12:
+              text_body = (
+                  custom_msg.replace(
+                      "[STUDENT_NAME]", str(s_row["Student_Name"])
+                  )
+                  .replace("[EXAM_TYPE]", str(s_row["Exam_Type"]))
+                  .replace("[TOTAL_MARKS]", str(int(s_row["Total_Marks"])))
+                  .replace("[MAX_MARKS]", str(int(s_row["Max_Marks"])))
+                  .replace("[PERCENTAGE]", f"{s_row['Percentage']:.2f}")
+                  .replace("[RANK]", str(s_row["Class_Rank"]))
+              )
+              encoded_txt = urllib.parse.quote(text_body)
+              wa_link = f"https://api.whatsapp.com/send?phone={mob}&text={encoded_txt}"
+              sent_count += 1
           st.success(
-              f"🎯 Target Audience Filtered: **{len(target_df)}** parent(s)"
-              " matched."
+              f"✅ Successfully generated WhatsApp broadcast links for"
+              f" {sent_count} parents!"
           )
-
-          if len(target_df) > 0:
-            if "WhatsApp" in delivery_mode:
-              st.write(
-                  "📱 **Click below to open WhatsApp chats for each"
-                  " parent:**"
-              )
-              for _, r in target_df.iterrows():
-                mob = clean_mobile_for_wa(r.get("Mobile_No", ""))
-                if len(mob) >= 10:
-                  encoded_msg = urllib.parse.quote(
-                      f"Hello {r['Student_Name']}'s Parent,\n\n{message_text}"
-                  )
-                  wa_link = f"https://wa.me/{mob}?text={encoded_msg}"
-                  st.markdown(
-                      f"💬 Send to **{r['Student_Name']}** (Class"
-                      f" {r['Class']} - {r.get('Mobile_No', '')}):"
-                      f" [Open WhatsApp Chat]({wa_link})"
-                  )
-            else:
-              st.success(
-                  "✅ Broadcast simulated successfully via Phone SMS gateway"
-                  f" to {len(target_df)} recipients!"
-              )
-              for _, r in target_df.iterrows():
-                st.write(
-                    f"📤 [SMS Sent] -> {r.get('Mobile_No', '')} | Student:"
-                    f" {r['Student_Name']}"
-                )
