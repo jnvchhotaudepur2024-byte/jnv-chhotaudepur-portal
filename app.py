@@ -147,6 +147,7 @@ ADMIN_PASS_HASH = hashlib.sha256(
 DB_FILE = "school_database.db"
 EXCEL_FILE_PATH = "JNV_Student_Marks.xlsx"
 
+# ADDED NEW SUBJECTS FOR CLASS 11-12
 ALL_SUBJECTS = [
     "Gujarati",
     "Hindi",
@@ -157,6 +158,13 @@ ALL_SUBJECTS = [
     "Physics",
     "Chemistry",
     "Biology",
+    "Accountancy",
+    "Business_Studies",
+    "Economics",
+    "History",
+    "Geography",
+    "Computer_Science",
+    "Physical_Education",
 ]
 
 LANG_TEXTS = {
@@ -830,8 +838,18 @@ def generate_merit_certificate_pdf(student_info, exam_type, percentage, rank):
   return buffer.getvalue()
 
 
+def calculate_grade(pct):
+    if pct >= 91: return "A1"
+    if pct >= 81: return "A2"
+    if pct >= 71: return "B1"
+    if pct >= 61: return "B2"
+    if pct >= 51: return "C1"
+    if pct >= 41: return "C2"
+    if pct >= 33: return "D"
+    return "E"
+
 # ==============================================================================
-# UPDATED 1-PAGE COMPACT PDF SCORECARD GENERATOR
+# UPDATED PDF SCORECARD GENERATOR (DYNAMIC FOR 6-8, 9-10 & 11-12)
 # ==============================================================================
 def generate_pdf_scorecard(student_info, filtered_df):
   buffer = io.BytesIO()
@@ -962,50 +980,28 @@ def generate_pdf_scorecard(student_info, filtered_df):
 
   info_rows = [
       [
-          Paragraph(
-              f"<b>G.R. No.</b> : {student_info.get('GR_No', '01')}", small_p
-          ),
-          Paragraph(
-              f"<b>Student Name</b> : <b>{student_info['Student_Name']}</b>",
-              small_p,
-          ),
+          Paragraph(f"<b>G.R. No.</b> : {student_info.get('GR_No', '01')}", small_p),
+          Paragraph(f"<b>Student Name</b> : <b>{student_info['Student_Name']}</b>", small_p),
           photo_elem,
       ],
       [
           Paragraph(f"<b>Class</b> : {student_info['Class']}", small_p),
-          Paragraph(
-              f"<b>Date of Birth</b> : {student_info['DOB']}", small_p
-          ),
+          Paragraph(f"<b>Date of Birth</b> : {student_info['DOB']}", small_p),
           "",
       ],
       [
           Paragraph(f"<b>Roll No.</b> : {student_info['Roll_No']}", small_p),
-          Paragraph(
-              f"<b>Mother Name</b> : {student_info.get('Mother_Name', '')}",
-              small_p,
-          ),
+          Paragraph(f"<b>Mother Name</b> : {student_info.get('Mother_Name', '')}", small_p),
           "",
       ],
       [
-          Paragraph(
-              f"<b>Gender</b> : {student_info.get('Gender', 'M')}", small_p
-          ),
-          Paragraph(
-              f"<b>Father Name</b> : {student_info['Father_Name']}", small_p
-          ),
+          Paragraph(f"<b>Gender</b> : {student_info.get('Gender', 'M')}", small_p),
+          Paragraph(f"<b>Father Name</b> : {student_info['Father_Name']}", small_p),
           "",
       ],
       [
-          Paragraph(
-              f"<b>House/Area</b> : {student_info.get('House', 'Aravali')} /"
-              f" {student_info.get('Area', 'Rural')}",
-              small_p,
-          ),
-          Paragraph(
-              "<b>Parents Contact</b> :"
-              f" {format_clean_number(student_info.get('Mobile_No', ''))}",
-              small_p,
-          ),
+          Paragraph(f"<b>House/Area</b> : {student_info.get('House', 'Aravali')} / {student_info.get('Area', 'Rural')}", small_p),
+          Paragraph(f"<b>Parents Contact</b> : {format_clean_number(student_info.get('Mobile_No', ''))}", small_p),
           "",
       ],
   ]
@@ -1024,18 +1020,7 @@ def generate_pdf_scorecard(student_info, filtered_df):
   story.append(Spacer(1, 2))
 
   part_a_head = Table(
-      [[
-          Paragraph(
-              "<b>PART A : SCHOLASTIC AREA</b>",
-              ParagraphStyle(
-                  "PartA",
-                  alignment=1,
-                  textColor=colors.white,
-                  fontSize=7.5,
-                  leading=9,
-              ),
-          )
-      ]],
+      [[Paragraph("<b>PART A : SCHOLASTIC AREA</b>", ParagraphStyle("PartA", alignment=1, textColor=colors.white, fontSize=7.5, leading=9))]],
       colWidths=[575],
   )
   part_a_head.setStyle(
@@ -1046,288 +1031,186 @@ def generate_pdf_scorecard(student_info, filtered_df):
   )
   story.append(part_a_head)
 
-  schol_head = [
-      [
-          "SUBJECT",
-          "TERM-1 (100 MARKS)",
-          "",
-          "",
-          "",
-          "",
-          "",
-          "",
-          "",
-          "",
-          "",
-          "TERM-2 (100 MARKS)",
-          "",
-          "",
-          "",
-          "",
-          "",
-          "",
-          "",
-          "",
-          "",
-          "Grand Total\n(K+U)\n(60+40)\n(100)",
-          "%",
-          "Grade",
-          "Sub Rank",
-      ],
-      [
-          "",
-          "PWT-1\n(40)",
-          "PWT-2\n(40)",
-          "Best 1-2\n(20)",
-          "Mult. Ass.\n(10)",
-          "Portf.\n(10)",
-          "Sub. Enr.\n(10)",
-          "Half Yly\n(80)",
-          "Half Yly\n(50)",
-          "Marks\n(100)",
-          "Term-1\n(40%)",
-          "PWT-3\n(40)",
-          "PWT-4\n(40)",
-          "Best 3-4\n(20)",
-          "Mult. Ass.\n(10)",
-          "Portf.\n(10)",
-          "Sub. Enr.\n(10)",
-          "Yearly\n(80)",
-          "Yearly\n(50)",
-          "Marks\n(100)",
-          "Term-2\n(60%)",
-          "",
-          "",
-          "",
-          "",
-      ],
-  ]
-
-  schol_rows = []
-  active_subs = [
-      s
-      for s in ALL_SUBJECTS
-      if s in student_info and pd.notna(student_info[s])
-  ]
-
-  def calculate_grade(pct):
-    if pct >= 91:
-      return "A1"
-    if pct >= 81:
-      return "A2"
-    if pct >= 71:
-      return "B1"
-    if pct >= 61:
-      return "B2"
-    if pct >= 51:
-      return "C1"
-    if pct >= 41:
-      return "C2"
-    if pct >= 33:
-      return "D"
-    return "E"
-
   breakdown_dict = {}
   try:
-    if (
-        "Sub_Breakdown_Data" in student_info
-        and student_info["Sub_Breakdown_Data"]
-    ):
+    if "Sub_Breakdown_Data" in student_info and student_info["Sub_Breakdown_Data"]:
       breakdown_dict = json.loads(str(student_info["Sub_Breakdown_Data"]))
-  except Exception:
+  except:
     breakdown_dict = {}
 
-  for sub in active_subs:
-    m_val = float(student_info[sub])
-    grd = calculate_grade(m_val)
-    s_bk = breakdown_dict.get(sub, {})
+  active_subs = [s for s in ALL_SUBJECTS if s in student_info and pd.notna(student_info[s])]
+  cls_level = str(student_info.get("Class", "")).upper().strip()
+  schol_table = None
 
-    pwt1 = s_bk.get("pwt1", "")
-    pwt2 = s_bk.get("pwt2", "")
-    best12 = (
-        round(max(float(pwt1), float(pwt2)) * 0.5, 1)
-        if pwt1 != "" and pwt2 != ""
-        else ""
-    )
-    ma = s_bk.get("ma1", "")
-    port = s_bk.get("port1", "")
-    sea = s_bk.get("sea1", "")
-    hy80 = s_bk.get("hy80", "")
-    hy50 = s_bk.get("hy50", "")
-    mo100 = s_bk.get("mo100_1", round(m_val, 1))
-    t1_40 = round(m_val * 0.4, 1) if m_val else ""
+  # =========================================================
+  # CLASS 9 & 10 FORMAT (IX, X) 
+  # Internal(20) [PT 5, MA 5, Port 5, SEA 5] + Annual(80)
+  # =========================================================
+  if cls_level in ['9', '10', 'IX', 'X']:
+      schol_head = [
+          ["SUBJECT", "PERIODIC TEST\n(5)", "MULTIPLE ASS.\n(5)", "PORTFOLIO\n(5)", "SUB ENRICH.\n(5)", "ANNUAL EXAM\n(80)", "TOTAL MARKS\n(100)", "GRADE"]
+      ]
+      schol_rows = []
+      total_obt = 0
+      for sub in active_subs:
+          m_val = float(student_info[sub])
+          total_obt += m_val
+          grd = calculate_grade(m_val)
+          s_bk = breakdown_dict.get(sub, {})
+          pt = s_bk.get("pt5", "")
+          ma = s_bk.get("ma5", "")
+          port = s_bk.get("port5", "")
+          sea = s_bk.get("sea5", "")
+          ann = s_bk.get("ann80", "")
+          schol_rows.append([sub.upper(), str(pt), str(ma), str(port), str(sea), str(ann), f"{m_val:.1f}", grd])
+      
+      schol_rows.append(["GRAND TOTAL", "", "", "", "", "", f"{total_obt:.1f}", calculate_grade(student_info["Percentage"])])
+      
+      t_data = schol_head + schol_rows
+      schol_table = Table(t_data, colWidths=[120, 70, 75, 75, 75, 75, 50, 35])
+      schol_table.setStyle(
+          TableStyle([
+              ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#00E676")),
+              ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#FFF176")),
+              ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#444444")),
+              ("FONTSIZE", (0, 0), (-1, -1), 6),
+              ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+              ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+          ])
+      )
 
-    pwt3 = s_bk.get("pwt3", "")
-    pwt4 = s_bk.get("pwt4", "")
-    best34 = (
-        round(max(float(pwt3), float(pwt4)) * 0.5, 1)
-        if pwt3 != "" and pwt4 != ""
-        else ""
-    )
-    ma2 = s_bk.get("ma2", "")
-    port2 = s_bk.get("port2", "")
-    sea2 = s_bk.get("sea2", "")
-    yr80 = s_bk.get("yr80", "")
-    yr50 = s_bk.get("yr50", "")
-    mo100_2 = s_bk.get("mo100_2", round(m_val, 1))
-    t2_60 = round(m_val * 0.6, 1) if m_val else ""
+  # =========================================================
+  # CLASS 11 & 12 FORMAT (XI, XII)
+  # Theory + Practical/Internal Evaluation
+  # =========================================================
+  elif cls_level in ['11', '12', 'XI', 'XII']:
+      schol_head = [
+          ["SUBJECT", "THEORY MARKS", "", "PRACTICAL/INT MARKS", "", "TOTAL MARKS", "", "GRADE"],
+          ["", "MAX", "OBT", "MAX", "OBT", "MAX", "OBT", ""]
+      ]
+      schol_rows = []
+      total_obt = 0
+      total_max = 0
+      for sub in active_subs:
+          m_val = float(student_info[sub])
+          total_obt += m_val
+          grd = calculate_grade(m_val)
+          s_bk = breakdown_dict.get(sub, {})
+          th_max = s_bk.get("th_max", "80/70")
+          th_obt = s_bk.get("th_obt", "")
+          pr_max = s_bk.get("pr_max", "20/30")
+          pr_obt = s_bk.get("pr_obt", "")
+          tot_max = 100
+          total_max += tot_max
+          schol_rows.append([sub.upper(), str(th_max), str(th_obt), str(pr_max), str(pr_obt), str(tot_max), f"{m_val:.1f}", grd])
+      
+      schol_rows.append(["GRAND TOTAL", "", "", "", "", f"{total_max}", f"{total_obt:.1f}", calculate_grade(student_info["Percentage"])])
+      
+      t_data = schol_head + schol_rows
+      schol_table = Table(t_data, colWidths=[135, 60, 60, 80, 80, 60, 60, 40])
+      schol_table.setStyle(
+          TableStyle([
+              ("SPAN", (0, 0), (0, 1)),
+              ("SPAN", (1, 0), (2, 0)),
+              ("SPAN", (3, 0), (4, 0)),
+              ("SPAN", (5, 0), (6, 0)),
+              ("SPAN", (7, 0), (7, 1)),
+              ("BACKGROUND", (0, 0), (-1, 1), colors.HexColor("#00E676")),
+              ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#FFF176")),
+              ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#444444")),
+              ("FONTSIZE", (0, 0), (-1, -1), 6),
+              ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+              ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+          ])
+      )
 
-    grand_total = (
-        round(float(t1_40) + float(t2_60), 1)
-        if t1_40 != "" and t2_60 != ""
-        else round(m_val, 1)
-    )
-    pct_str = f"{m_val:.1f}"
+  # =========================================================
+  # CLASS 6 TO 8 FORMAT (Term 1 & Term 2)
+  # =========================================================
+  else:
+      schol_head = [
+          ["SUBJECT", "TERM-1 (100 MARKS)", "", "", "", "", "", "", "", "", "", "TERM-2 (100 MARKS)", "", "", "", "", "", "", "", "", "", "Grand Total\n(K+U)\n(60+40)\n(100)", "%", "Grade", "Sub Rank"],
+          ["", "PWT-1\n(40)", "PWT-2\n(40)", "Best 1-2\n(20)", "Mult. Ass.\n(10)", "Portf.\n(10)", "Sub. Enr.\n(10)", "Half Yly\n(80)", "Half Yly\n(50)", "Marks\n(100)", "Term-1\n(40%)", "PWT-3\n(40)", "PWT-4\n(40)", "Best 3-4\n(20)", "Mult. Ass.\n(10)", "Portf.\n(10)", "Sub. Enr.\n(10)", "Yearly\n(80)", "Yearly\n(50)", "Marks\n(100)", "Term-2\n(60%)", "", "", "", ""]
+      ]
+      schol_rows = []
+      for sub in active_subs:
+          m_val = float(student_info[sub])
+          grd = calculate_grade(m_val)
+          s_bk = breakdown_dict.get(sub, {})
+          pwt1, pwt2 = s_bk.get("pwt1", ""), s_bk.get("pwt2", "")
+          best12 = round(max(float(pwt1), float(pwt2)) * 0.5, 1) if pwt1 != "" and pwt2 != "" else ""
+          ma, port, sea = s_bk.get("ma1", ""), s_bk.get("port1", ""), s_bk.get("sea1", "")
+          hy80, hy50 = s_bk.get("hy80", ""), s_bk.get("hy50", "")
+          mo100 = s_bk.get("mo100_1", round(m_val, 1))
+          t1_40 = round(m_val * 0.4, 1) if m_val else ""
 
-    schol_rows.append([
-        sub.upper(),
-        str(pwt1),
-        str(pwt2),
-        str(best12),
-        str(ma),
-        str(port),
-        str(sea),
-        str(hy80),
-        str(hy50),
-        str(mo100),
-        str(t1_40),
-        str(pwt3),
-        str(pwt4),
-        str(best34),
-        str(ma2),
-        str(port2),
-        str(sea2),
-        str(yr80),
-        str(yr50),
-        str(mo100_2),
-        str(t2_60),
-        str(grand_total),
-        pct_str,
-        grd,
-        "1",
-    ])
+          pwt3, pwt4 = s_bk.get("pwt3", ""), s_bk.get("pwt4", "")
+          best34 = round(max(float(pwt3), float(pwt4)) * 0.5, 1) if pwt3 != "" and pwt4 != "" else ""
+          ma2, port2, sea2 = s_bk.get("ma2", ""), s_bk.get("port2", ""), s_bk.get("sea2", "")
+          yr80, yr50 = s_bk.get("yr80", ""), s_bk.get("yr50", "")
+          mo100_2 = s_bk.get("mo100_2", round(m_val, 1))
+          t2_60 = round(m_val * 0.6, 1) if m_val else ""
 
-  schol_data = schol_head + schol_rows
-  schol_data.append([
-      "CLASS RANK :",
-      f"{student_info['Class_Rank']}",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "",
-      "OVERALL",
-      "",
-      f"{int(student_info['Total_Marks'])}",
-      f"{student_info['Percentage']:.1f}%",
-      calculate_grade(student_info["Percentage"]),
-      "1",
-  ])
+          grand_total = round(float(t1_40) + float(t2_60), 1) if t1_40 != "" and t2_60 != "" else round(m_val, 1)
+          schol_rows.append([sub.upper(), str(pwt1), str(pwt2), str(best12), str(ma), str(port), str(sea), str(hy80), str(hy50), str(mo100), str(t1_40), str(pwt3), str(pwt4), str(best34), str(ma2), str(port2), str(sea2), str(yr80), str(yr50), str(mo100_2), str(t2_60), str(grand_total), f"{m_val:.1f}", grd, "1"])
 
-  schol_table = Table(schol_data, colWidths=[70] + [20] * 20 + [25, 20, 20, 20])
-  schol_table.setStyle(
-      TableStyle([
-          ("SPAN", (0, 0), (0, 1)),
-          ("SPAN", (1, 0), (10, 0)),
-          ("SPAN", (11, 0), (20, 0)),
-          ("SPAN", (21, 0), (21, 1)),
-          ("SPAN", (22, 0), (22, 1)),
-          ("SPAN", (23, 0), (23, 1)),
-          ("SPAN", (24, 0), (24, 1)),
-          ("SPAN", (1, -1), (18, -1)),
-          ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#E0F7FA")),
-          ("BACKGROUND", (1, 0), (10, 1), colors.HexColor("#00E676")),
-          ("BACKGROUND", (11, 0), (20, 1), colors.HexColor("#FFB74D")),
-          ("BACKGROUND", (21, 0), (24, 1), colors.HexColor("#FFF176")),
-          ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#444444")),
-          ("FONTSIZE", (0, 0), (-1, -1), 5),
-          ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-          ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-          ("PADDING", (0, 0), (-1, -1), 0.5),
-      ])
-  )
+      schol_rows.append(["CLASS RANK :", f"{student_info['Class_Rank']}", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "OVERALL", "", f"{int(student_info['Total_Marks'])}", f"{student_info['Percentage']:.1f}%", calculate_grade(student_info["Percentage"]), "1"])
+      schol_table = Table(schol_head + schol_rows, colWidths=[70] + [20] * 20 + [25, 20, 20, 20])
+      schol_table.setStyle(
+          TableStyle([
+              ("SPAN", (0, 0), (0, 1)),
+              ("SPAN", (1, 0), (10, 0)),
+              ("SPAN", (11, 0), (20, 0)),
+              ("SPAN", (21, 0), (21, 1)),
+              ("SPAN", (22, 0), (22, 1)),
+              ("SPAN", (23, 0), (23, 1)),
+              ("SPAN", (24, 0), (24, 1)),
+              ("SPAN", (1, -1), (18, -1)),
+              ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#E0F7FA")),
+              ("BACKGROUND", (1, 0), (10, 1), colors.HexColor("#00E676")),
+              ("BACKGROUND", (11, 0), (20, 1), colors.HexColor("#FFB74D")),
+              ("BACKGROUND", (21, 0), (24, 1), colors.HexColor("#FFF176")),
+              ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#444444")),
+              ("FONTSIZE", (0, 0), (-1, -1), 5),
+              ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+              ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+              ("PADDING", (0, 0), (-1, -1), 0.5),
+          ])
+      )
+
   story.append(schol_table)
   story.append(Spacer(1, 2))
 
   story.append(
-      Paragraph(
-          f"<b>A 1 - Skill Course :</b> <font color='#006600'>"
-          f"{student_info.get('Skill_Course', 'Handicraft')}</font>",
-          small_p,
-      )
+      Paragraph(f"<b>A 1 - Skill Course :</b> <font color='#006600'>{student_info.get('Skill_Course', 'Handicraft')}</font>", small_p)
   )
   story.append(Spacer(1, 2))
 
   co_sch_raw = str(student_info.get("Co_Scholastic", ""))
-  t1_art, t2_art, t1_health, t2_health, t1_comm, t2_comm = (
-      "A",
-      "A",
-      "A",
-      "A",
-      "A",
-      "A",
-  )
+  t1_art, t2_art, t1_health, t2_health, t1_comm, t2_comm = ("A", "A", "A", "A", "A", "A")
   if "Art:" in co_sch_raw:
     try:
       parts = co_sch_raw.split("|")
       for p in parts:
-        if "Art:" in p:
-          t1_art, t2_art = p.replace("Art:", "").strip().split("/")
-        elif "Health:" in p:
-          t1_health, t2_health = p.replace("Health:", "").strip().split("/")
-        elif "Comm:" in p:
-          t1_comm, t2_comm = p.replace("Comm:", "").strip().split("/")
-    except Exception:
-      pass
+        if "Art:" in p: t1_art, t2_art = p.replace("Art:", "").strip().split("/")
+        elif "Health:" in p: t1_health, t2_health = p.replace("Health:", "").strip().split("/")
+        elif "Comm:" in p: t1_comm, t2_comm = p.replace("Comm:", "").strip().split("/")
+    except: pass
 
   bag_raw = str(student_info.get("Bagless_Days", ""))
   b_part, b_vac, b_sch = "Yes", "05", "05"
   if "|" in bag_raw:
-    try:
-      b_part, b_vac, b_sch = [x.strip() for x in bag_raw.split("|")]
-    except Exception:
-      pass
+    try: b_part, b_vac, b_sch = [x.strip() for x in bag_raw.split("|")]
+    except: pass
 
   part_b_table = Table(
       [
+          [Paragraph("<b>PART B : CO-SCHOLASTIC (3-Pt A-C)</b>", bold_center), Paragraph("<b>PART C : 10 BAGLESS DAYS</b>", bold_center)],
           [
-              Paragraph(
-                  "<b>PART B : CO-SCHOLASTIC (3-Pt A-C)</b>", bold_center
-              ),
-              Paragraph("<b>PART C : 10 BAGLESS DAYS</b>", bold_center),
+              Table([["Co-Scholastic Area", "Term-1", "Term-2"], ["Community Service", t1_comm, t2_comm], ["Art Education", t1_art, t2_art], ["Health & Physical Ed.", t1_health, t2_health]], colWidths=[175, 75, 75]),
+              Table([["Participation", "Vacation", "School"], [b_part, b_vac, b_sch]], colWidths=[80, 85, 85]),
           ],
-          [
-              Table(
-                  [
-                      ["Co-Scholastic Area", "Term-1", "Term-2"],
-                      ["Community Service", t1_comm, t2_comm],
-                      ["Art Education", t1_art, t2_art],
-                      ["Health & Physical Ed.", t1_health, t2_health],
-                  ],
-                  colWidths=[175, 75, 75],
-              ),
-              Table(
-                  [
-                      ["Participation", "Vacation", "School"],
-                      [b_part, b_vac, b_sch],
-                  ],
-                  colWidths=[80, 85, 85],
-              ),
-          ],
-      ],
-      colWidths=[325, 250],
+      ], colWidths=[325, 250],
   )
   part_b_table.setStyle(
       TableStyle([
@@ -1344,41 +1227,13 @@ def generate_pdf_scorecard(student_info, filtered_df):
 
   part_d_f = Table(
       [
+          [Paragraph("<b>PART D : DISCIPLINE</b>", bold_center), Paragraph("<b>PART F : ATTENDANCE</b>", bold_center), Paragraph("<b>PART E : OUTSTANDING ACHIEVEMENT</b>", bold_center)],
           [
-              Paragraph("<b>PART D : DISCIPLINE</b>", bold_center),
-              Paragraph("<b>PART F : ATTENDANCE</b>", bold_center),
-              Paragraph("<b>PART E : OUTSTANDING ACHIEVEMENT</b>", bold_center),
+              Table([["Area", "T-1", "T-2"], ["Discipline", student_info.get("Discipline", "A"), student_info.get("Discipline", "A")]], colWidths=[90, 45, 45]),
+              Table([["Working", "Present", "%"], [student_info.get("Working_Days", "220"), student_info.get("Present_Days", "210"), student_info.get("Attendance", "95%")]], colWidths=[50, 50, 50]),
+              Paragraph(f"{student_info.get('Outstanding_Achievement', 'None')}", small_p),
           ],
-          [
-              Table(
-                  [
-                      ["Area", "T-1", "T-2"],
-                      [
-                          "Discipline",
-                          student_info.get("Discipline", "A"),
-                          student_info.get("Discipline", "A"),
-                      ],
-                  ],
-                  colWidths=[90, 45, 45],
-              ),
-              Table(
-                  [
-                      ["Working", "Present", "%"],
-                      [
-                          student_info.get("Working_Days", "220"),
-                          student_info.get("Present_Days", "210"),
-                          student_info.get("Attendance", "95%"),
-                      ],
-                  ],
-                  colWidths=[50, 50, 50],
-              ),
-              Paragraph(
-                  f"{student_info.get('Outstanding_Achievement', 'None')}",
-                  small_p,
-              ),
-          ],
-      ],
-      colWidths=[180, 150, 245],
+      ], colWidths=[180, 150, 245],
   )
   part_d_f.setStyle(
       TableStyle([
@@ -1396,37 +1251,18 @@ def generate_pdf_scorecard(student_info, filtered_df):
   story.append(Spacer(1, 2))
 
   remark_text = student_info.get("Remarks", "Passed and Promoted")
-  t_sign = (
-      RLImage(TEACHER_SIGN_PATH, width=45, height=18)
-      if os.path.exists(TEACHER_SIGN_PATH)
-      else Paragraph("", small_p)
-  )
-  p_sign = (
-      RLImage(SIGN_PATH, width=45, height=18)
-      if os.path.exists(SIGN_PATH)
-      else Paragraph("", small_p)
-  )
+  t_sign = RLImage(TEACHER_SIGN_PATH, width=45, height=18) if os.path.exists(TEACHER_SIGN_PATH) else Paragraph("", small_p)
+  p_sign = RLImage(SIGN_PATH, width=45, height=18) if os.path.exists(SIGN_PATH) else Paragraph("", small_p)
 
   bottom_grid = Table(
       [
           [
-              Paragraph(
-                  f"<b>Remarks:</b> <font color='#B22222'>{remark_text}</font>",
-                  small_p,
-              ),
-              Paragraph(
-                  f"<b>Result:</b> <font color='green'><b>Passed & Promoted to"
-                  f" Class {student_info['Class']}</b></font>",
-                  small_p,
-              ),
+              Paragraph(f"<b>Remarks:</b> <font color='#B22222'>{remark_text}</font>", small_p),
+              Paragraph(f"<b>Result:</b> <font color='green'><b>Passed & Promoted to Class {student_info['Class']}</b></font>", small_p),
           ],
           [t_sign, p_sign],
-          [
-              Paragraph("<b>Class Teacher Signature</b>", small_center),
-              Paragraph("<b>Principal Signature & Seal</b>", small_center),
-          ],
-      ],
-      colWidths=[285, 290],
+          [Paragraph("<b>Class Teacher Signature</b>", small_center), Paragraph("<b>Principal Signature & Seal</b>", small_center)],
+      ], colWidths=[285, 290],
   )
   bottom_grid.setStyle(
       TableStyle([
@@ -1439,9 +1275,7 @@ def generate_pdf_scorecard(student_info, filtered_df):
   )
   story.append(bottom_grid)
 
-  watermark_fn = create_watermark_callback(
-      "PM SHRI JNV CHHOTAUDEPUR", with_border=True, border_color="#B22222"
-  )
+  watermark_fn = create_watermark_callback("PM SHRI JNV CHHOTAUDEPUR", with_border=True, border_color="#B22222")
   doc.build(story, onFirstPage=watermark_fn, onLaterPages=watermark_fn)
   buffer.seek(0)
   return buffer.getvalue()
@@ -2201,7 +2035,6 @@ elif menu == "🏆 BOARD EXAM RESULTS":
           if "10" in str(t.get("class", ""))
           and "demo" not in str(t.get("name", "")).lower()
       ]
-      # Requirement 5: The hall of fame class 10 is also show in running way in right to left
       render_topper_marquee(t10_list, right_to_left=True)
 
 # ==============================================================================
@@ -2230,6 +2063,29 @@ elif menu == "⚙️ ADMIN PORTAL":
       st.session_state["admin_logged_in"] = False
       st.rerun()
 
+    st.markdown("---")
+
+    # ================== EXCEL TEMPLATE GENERATOR FOR ALL CLASSES ==================
+    st.subheader("📥 Master Excel Templates (Class 6 to 12)")
+    st.write("Yahan se aap exact format wali Excel Data Sheet download kar sakte hain jisse software automatically calculate kar sakeगा.")
+    if st.button("Generate & Download Master Excel Template"):
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            # Sheet 1: Basic Info
+            cols_basic = ["Roll_No", "Class", "Student_Name", "Father_Name", "Mother_Name", "Gender", "DOB", "Aadhaar_No", "Mobile_No"]
+            pd.DataFrame(columns=cols_basic).to_excel(writer, sheet_name='Basic_Details', index=False)
+            
+            # Sheet 2: Marks Template
+            cols_marks = ["Roll_No", "Class", "Exam_Type", "Max_Marks"] + ALL_SUBJECTS + ["Sub_Breakdown_Data"]
+            df_m = pd.DataFrame(columns=cols_marks)
+            df_m.loc[0] = ["101", "10", "Term-1", "500"] + [""] * len(ALL_SUBJECTS) + ['{"English": {"pt5": 4, "ma5": 5, "port5": 4, "sea5": 5, "ann80": 65}}']
+            df_m.to_excel(writer, sheet_name='Marks_Data', index=False)
+        st.download_button(
+            label="⬇️ Download student_result.xlsx",
+            data=output.getvalue(),
+            file_name="student_result.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
     st.markdown("---")
 
     st.subheader("🖨️ Parent Portal Report Card Print Control")
@@ -2409,6 +2265,67 @@ elif menu == "⚙️ ADMIN PORTAL":
 
       st.markdown("---")
       if st.session_state["student_data"] is not None:
+        
+        # 🛠️ ADVANCED MARKS EDITOR (NEW FEATURE TO UPDATE ALL VALUES)
+        st.markdown("##### 🛠️ Update Advanced Subject Marks & Internal/Practical (Sub_Breakdown_Data)")
+        st.write("Yahan se aap Report Card ki alag-alag values (Jaise Theory, Practical, PT, Portfolio) update kar sakte hain.")
+        e_roll = st.selectbox("Select Student (Roll No):", sorted(st.session_state["student_data"]["Roll_No"].astype(str).unique()), key="adv_marks_roll")
+        
+        if e_roll:
+            s_df = st.session_state["student_data"][st.session_state["student_data"]["Roll_No"].astype(str) == e_roll]
+            if not s_df.empty:
+                s_idx = s_df.index[0]
+                s_row = s_df.iloc[0]
+                e_sub = st.selectbox("Select Subject to Edit:", ALL_SUBJECTS, key="adv_sub")
+                
+                try: b_data = json.loads(str(s_row.get("Sub_Breakdown_Data", "{}")))
+                except: b_data = {}
+                sub_b_data = b_data.get(e_sub, {})
+
+                cls_val = str(s_row["Class"]).upper().strip()
+                
+                with st.form("adv_marks_form"):
+                    if cls_val in ['9', '10', 'IX', 'X']:
+                        c1, c2, c3, c4, c5 = st.columns(5)
+                        pt = c1.text_input("Periodic Test (5)", value=sub_b_data.get("pt5", ""))
+                        ma = c2.text_input("Multiple Ass. (5)", value=sub_b_data.get("ma5", ""))
+                        port = c3.text_input("Portfolio (5)", value=sub_b_data.get("port5", ""))
+                        sea = c4.text_input("Sub Enrich (5)", value=sub_b_data.get("sea5", ""))
+                        ann = c5.text_input("Annual Exam (80)", value=sub_b_data.get("ann80", ""))
+                        
+                        if st.form_submit_button("💾 Save IX-X Marks"):
+                            sub_b_data.update({"pt5": pt, "ma5": ma, "port5": port, "sea5": sea, "ann80": ann})
+                            b_data[e_sub] = sub_b_data
+                            st.session_state["student_data"].at[s_idx, "Sub_Breakdown_Data"] = json.dumps(b_data)
+                            sync_df_to_sqlite(st.session_state["student_data"])
+                            st.success(f"✅ Class 9-10 format marks updated for {e_sub}!")
+                            st.rerun()
+                    
+                    elif cls_val in ['11', '12', 'XI', 'XII']:
+                        c1, c2, c3, c4 = st.columns(4)
+                        th_max = c1.text_input("Theory Max (70/80)", value=sub_b_data.get("th_max", "80"))
+                        th_obt = c2.text_input("Theory Obtained", value=sub_b_data.get("th_obt", ""))
+                        pr_max = c3.text_input("Practical Max (30/20)", value=sub_b_data.get("pr_max", "20"))
+                        pr_obt = c4.text_input("Practical Obtained", value=sub_b_data.get("pr_obt", ""))
+                        
+                        if st.form_submit_button("💾 Save XI-XII Marks"):
+                            sub_b_data.update({"th_max": th_max, "th_obt": th_obt, "pr_max": pr_max, "pr_obt": pr_obt})
+                            b_data[e_sub] = sub_b_data
+                            st.session_state["student_data"].at[s_idx, "Sub_Breakdown_Data"] = json.dumps(b_data)
+                            sync_df_to_sqlite(st.session_state["student_data"])
+                            st.success(f"✅ Class 11-12 format marks updated for {e_sub}!")
+                            st.rerun()
+                    else:
+                        st.info("Class 6-8 default format detected. Update JSON directly or in Main Excel sheet.")
+                        new_json_str = st.text_input("Raw JSON for 6-8", value=json.dumps(sub_b_data))
+                        if st.form_submit_button("💾 Save 6-8 Marks"):
+                            b_data[e_sub] = json.loads(new_json_str)
+                            st.session_state["student_data"].at[s_idx, "Sub_Breakdown_Data"] = json.dumps(b_data)
+                            sync_df_to_sqlite(st.session_state["student_data"])
+                            st.success("✅ Class 6-8 marks updated!")
+                            st.rerun()
+        st.markdown("---")
+
         st.markdown("##### 📝 Detailed Student Report Card Attribute Manager")
         sel_roll = st.selectbox(
             "Select Student (by Roll No) to Edit Specific Report Card Extra"
@@ -2624,239 +2541,10 @@ elif menu == "⚙️ ADMIN PORTAL":
             st.session_state["student_data"],
             num_rows="dynamic",
             use_container_width=True,
-            key="db_realtime_editor",
+            key="db_editor"
         )
-
-        if "show_save_confirm" not in st.session_state:
-          st.session_state["show_save_confirm"] = False
-
-        if st.button("💾 Save Edits to SQLite Database"):
-          st.session_state["show_save_confirm"] = True
-
-        if st.session_state.get("show_save_confirm", False):
-          st.warning("❓ **ARE YOU SURE YOU WANT TO UPDATE THE DATABASE?**")
-          confirm_col1, confirm_col2 = st.columns(2)
-          with confirm_col1:
-            if st.button("✅ YES, SAVE DATA", use_container_width=True):
-              for sub in ALL_SUBJECTS:
-                if sub in edited_df.columns:
-                  edited_df[sub] = pd.to_numeric(
-                      edited_df[sub], errors="coerce"
-                  )
-              edited_df["Total_Marks"] = edited_df[ALL_SUBJECTS].sum(
-                  axis=1, skipna=True
-              )
-              edited_df["Percentage"] = (
-                  (edited_df["Total_Marks"] / edited_df["Max_Marks"]) * 100
-              ).round(2)
-
-              st.session_state["student_data"] = edited_df
-              sync_df_to_sqlite(edited_df)
-              st.session_state["show_save_confirm"] = False
-              st.success("✅ Database updated successfully!")
-              st.rerun()
-          with confirm_col2:
-            if st.button("❌ CANCEL", use_container_width=True):
-              st.session_state["show_save_confirm"] = False
-              st.rerun()
-
-    with st.expander(
-        "📢 4. DIGITAL NOTICE BOARD & 🏆 BOARD TOPPERS MANAGEMENT",
-        expanded=False,
-    ):
-      st.markdown("##### 📢 Notice Board Manager")
-      current_notices = load_notices()
-      new_notice_input = st.text_area(
-          "Edit Notices (One notice per line):",
-          value="\n".join(current_notices),
-      )
-      if st.button("💾 Update Notice Board"):
-        updated_list = [
-            n.strip() for n in new_notice_input.split("\n") if n.strip()
-        ]
-        save_notices(updated_list)
-        st.success("✅ Notice board updated successfully!")
-        st.rerun()
-
-      st.markdown("---")
-      st.markdown("##### 🏆 CBSE Board Toppers Manager (Hall of Fame)")
-      board_toppers = load_board_toppers()
-
-      with st.form("add_board_topper_form"):
-        bt_name = st.text_input("Student Name")
-        bt_class = st.selectbox(
-            "Class", ["Class 10", "Class 12", "Class IX", "Class XI"]
-        )
-        bt_pct = st.text_input("Percentage / CGPA (e.g., 98.4%)")
-        bt_year = st.text_input("Academic Year", value="2024-25")
-        bt_rank = st.text_input("Rank / Position (e.g., School Topper #1)")
-        bt_photo = st.file_uploader(
-            "Topper Photo", type=["png", "jpg", "jpeg"]
-        )
-        bt_submit = st.form_submit_button("➕ Add Board Topper")
-
-        if bt_submit:
-          if bt_name and bt_pct:
-            photo_path_saved = ""
-            if bt_photo:
-              photo_path_saved = f"photos/board/{bt_name.replace(' ', '_')}.png"
-              Image.open(bt_photo).save(photo_path_saved)
-            board_toppers.append({
-                "name": bt_name,
-                "class": bt_class,
-                "percentage": bt_pct,
-                "year": bt_year,
-                "rank": bt_rank,
-                "photo": photo_path_saved,
-            })
-            save_board_toppers(board_toppers)
-            st.success(f"✅ Added {bt_name} to Board Toppers Hall of Fame!")
+        if st.button("💾 Save Database Changes"):
+            st.session_state["student_data"] = edited_df
+            sync_df_to_sqlite(edited_df)
+            st.success("✅ Data saved successfully!")
             st.rerun()
-          else:
-            st.error("Please enter Name and Percentage.")
-
-      if board_toppers:
-        st.markdown("Current Board Toppers:")
-        for idx, t_item in enumerate(board_toppers):
-          col_bt1, col_bt2 = st.columns([4, 1])
-          with col_bt1:
-            st.write(
-                f"{idx+1}. **{t_item['name']}** ({t_item['class']}) -"
-                f" {t_item['percentage']} ({t_item.get('year', '')})"
-            )
-          with col_bt2:
-            if st.button("🗑️ Delete", key=f"del_bt_{idx}"):
-              board_toppers.pop(idx)
-              save_board_toppers(board_toppers)
-              st.rerun()
-
-    with st.expander(
-        "✒️ 5. DIGITAL SEAL & SIGNATURES MANAGEMENT", expanded=False
-    ):
-      st.markdown(
-          "##### Upload Official School Seals & Signatures for PDF Reports"
-      )
-      sig_col1, sig_col2, sig_col3 = st.columns(3)
-
-      with sig_col1:
-        st.markdown("**Principal Signature**")
-        if os.path.exists(SIGN_PATH):
-          st.image(SIGN_PATH, width=120)
-        up_sig = st.file_uploader(
-            "Upload Principal Sign", type=["png", "jpg", "jpeg"], key="up_sig"
-        )
-        if up_sig and st.button("Save Principal Sign"):
-          Image.open(up_sig).save(SIGN_PATH)
-          st.success("✅ Principal Signature updated!")
-          st.rerun()
-
-      with sig_col2:
-        st.markdown("**School Seal / Stamp**")
-        if os.path.exists(SEAL_PATH):
-          st.image(SEAL_PATH, width=120)
-        up_seal = st.file_uploader(
-            "Upload School Seal", type=["png", "jpg", "jpeg"], key="up_seal"
-        )
-        if up_seal and st.button("Save School Seal"):
-          Image.open(up_seal).save(SEAL_PATH)
-          st.success("✅ School Seal updated!")
-          st.rerun()
-
-      with sig_col3:
-        st.markdown("**Class Teacher Signature**")
-        if os.path.exists(TEACHER_SIGN_PATH):
-          st.image(TEACHER_SIGN_PATH, width=120)
-        up_tsig = st.file_uploader(
-            "Upload Teacher Sign", type=["png", "jpg", "jpeg"], key="up_tsig"
-        )
-        if up_tsig and st.button("Save Teacher Sign"):
-          Image.open(up_tsig).save(TEACHER_SIGN_PATH)
-          st.success("✅ Teacher Signature updated!")
-          st.rerun()
-
-    with st.expander("🖼️ 6. SCHOOL GALLERY MANAGEMENT", expanded=False):
-      st.markdown("##### Upload Photos to School Gallery Marquee")
-      gal_files = st.file_uploader(
-          "Upload Gallery Photos",
-          type=["png", "jpg", "jpeg"],
-          accept_multiple_files=True,
-          key="gal_up",
-      )
-      if gal_files and st.button("Upload to Gallery"):
-        for g_file in gal_files:
-          g_path = os.path.join("photos/gallery", g_file.name)
-          Image.open(g_file).save(g_path)
-        st.success("✅ Gallery photos uploaded successfully!")
-        st.rerun()
-
-      existing_gal = os.listdir("photos/gallery")
-      if existing_gal:
-        st.markdown("Existing Gallery Photos:")
-        g_cols = st.columns(4)
-        for idx, g_img in enumerate(existing_gal):
-          with g_cols[idx % 4]:
-            st.image(os.path.join("photos/gallery", g_img), width=100)
-            if st.button("Delete", key=f"del_gal_{idx}"):
-              os.remove(os.path.join("photos/gallery", g_img))
-              st.rerun()
-
-    with st.expander(
-        "📨 7. PARENT MESSAGING SYSTEM (WHATSAPP & SMS)", expanded=False
-    ):
-      st.markdown(
-          "##### Broadcast Result Notification via WhatsApp & SMS API"
-      )
-      if st.session_state["student_data"] is not None:
-        df_msg = st.session_state["student_data"]
-        msg_cls = st.selectbox(
-            "Select Class for Messaging",
-            sorted(df_msg["Class"].astype(str).unique()),
-            key="msg_cls_sel",
-        )
-        msg_exam = st.selectbox(
-            "Select Exam",
-            sorted(df_msg["Exam_Type"].astype(str).unique()),
-            key="msg_exam_sel",
-        )
-
-        filtered_msg_df = df_msg[
-            (df_msg["Class"].astype(str) == str(msg_cls))
-            & (df_msg["Exam_Type"] == msg_exam)
-        ]
-        st.write(
-            f"Total students targeted in Class {msg_cls} ({msg_exam}):"
-            f" **{len(filtered_msg_df)}**"
-        )
-
-        custom_msg = st.text_area(
-            "Message Template:",
-            value=(
-                "Respected Parent, The result of your ward [STUDENT_NAME] for"
-                " [EXAM_TYPE] has been declared. Total Marks: [TOTAL_MARKS]/[MAX_MARKS]"
-                " ([PERCENTAGE]%), Rank: #[RANK]. Please check the PM SHRI JNV"
-                " Chhotaudepur portal for detailed report card."
-            ),
-        )
-
-        if st.button("📤 Send WhatsApp Broadcast (API simulation)"):
-          sent_count = 0
-          for _, s_row in filtered_msg_df.iterrows():
-            mob = clean_mobile_for_wa(s_row.get("Mobile_No", ""))
-            if len(mob) >= 12:
-              text_body = (
-                  custom_msg.replace(
-                      "[STUDENT_NAME]", str(s_row["Student_Name"])
-                  )
-                  .replace("[EXAM_TYPE]", str(s_row["Exam_Type"]))
-                  .replace("[TOTAL_MARKS]", str(int(s_row["Total_Marks"])))
-                  .replace("[MAX_MARKS]", str(int(s_row["Max_Marks"])))
-                  .replace("[PERCENTAGE]", f"{s_row['Percentage']:.2f}")
-                  .replace("[RANK]", str(s_row["Class_Rank"]))
-              )
-              encoded_txt = urllib.parse.quote(text_body)
-              wa_link = f"https://api.whatsapp.com/send?phone={mob}&text={encoded_txt}"
-              sent_count += 1
-          st.success(
-              f"✅ Successfully generated WhatsApp broadcast links for"
-              f" {sent_count} parents!"
-          )
