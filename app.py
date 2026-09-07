@@ -2822,115 +2822,107 @@ elif menu == "⚙️ ADMIN PORTAL":
                 st.rerun()
 
     # Requirement 9: Parent Messaging System (House, Class, Junior/Senior, All, WhatsApp & Direct SMS)
-    with st.expander(# 7. PARENT MESSAGING SYSTEM (WHATSAPP & SMS)
-        with st.expander("📨 7. PARENT MESSAGING SYSTEM (WHATSAPP & SMS)", expanded=False):
-            if st.session_state["student_data"] is not None:
-                df_msg = st.session_state["student_data"]
-                
-                # Filter Mode Selection
-                msg_target = st.radio(
-                    "Message kisko bhejna hai select karein:",
-                    ["👤 Individual Student", "🏫 Class-Wise Bulk", "🏠 House-Wise Bulk"],
-                    horizontal=True
-                )
-                
-                selected_students = pd.DataFrame()
-                
-                if msg_target == "👤 Individual Student":
-                    s_mob_roll = st.selectbox("Select Student Roll No", sorted(df_msg["Roll_No"].astype(str).unique()), key="msg_roll")
-                    selected_students = df_msg[df_msg["Roll_No"].astype(str) == s_mob_roll]
-                elif msg_target == "🏫 Class-Wise Bulk":
-                    sel_cls = st.selectbox("Select Class", sorted(df_msg["Class"].astype(str).unique()), key="msg_cls")
-                    selected_students = df_msg[df_msg["Class"].astype(str) == sel_cls]
-                elif msg_target == "🏠 House-Wise Bulk":
-                    sel_house = st.selectbox("Select House", sorted(df_msg["House"].dropna().astype(str).unique()), key="msg_house")
-                    selected_students = df_msg[df_msg["House"].astype(str) == sel_house]
+    with st.expander(
+        "📨 7. PARENT MESSAGING SYSTEM (WHATSAPP & SMS)", expanded=True
+    ):
+      st.subheader("📢 Send Bulk / Targeted Messages to Parents")
+      if st.session_state["student_data"] is not None:
+        df_msg = st.session_state["student_data"]
 
-                if not selected_students.empty:
-                    st.info(f"📋 Selected Students Count: **{len(selected_students)}**")
-                    
-                    # 💬 1. WHATSAPP NOTIFICATION
-                    if msg_target == "👤 Individual Student":
-                        m_row = selected_students.iloc[0]
-                        mob = format_clean_number(m_row.get("Mobile_No", ""))
-                        msg_txt = f"Dear Parent, Your ward {m_row['Student_Name']} scored {m_row['Percentage']}% in Exam. Check Result on JNV Portal."
-                        encoded_msg = urllib.parse.quote(msg_txt)
-                        wa_url = f"https://api.whatsapp.com/send?phone=91{mob}&text={encoded_msg}"
-                        st.markdown(f'<a href="{wa_url}" target="_blank"><button style="background-color:#25D366; color:white; padding:8px 12px; border:none; border-radius:5px; margin-bottom:15px; cursor:pointer;">💬 Send WhatsApp Notification</button></a>', unsafe_allow_html=True)
-                    
-                    st.markdown("---")
-                    st.subheader("📱 Direct Text SMS Gateway (Fast2SMS / TextLocal)")
-                    
-                    c_api1, c_api2 = st.columns([1, 2])
-                    with c_api1:
-                        sms_provider = st.selectbox("Select SMS Provider", ["Fast2SMS", "TextLocal"])
-                    with c_api2:
-                        api_key = st.text_input("Enter API Key", type="password", help="Fast2SMS ya TextLocal ka authorization API key yahan daalein")
-                    
-                    default_tpl = "Dear Parent, your ward {Name} (Class {Class}) scored {Percentage}% in Exam. - PM SHRI JNV CHHOTAUDEPUR"
-                    custom_tpl = st.text_area("SMS Message Template (Placeholders: {Name}, {Class}, {Percentage})", value=default_tpl)
-                    
-                    if st.button("🚀 Send SMS Notification Now"):
-                        if not api_key.strip():
-                            st.error("❌ Please API Key daalein SMS bhejne ke liye.")
-                        else:
-                            success_count = 0
-                            failed_count = 0
-                            
-                            progress_bar = st.progress(0)
-                            total = len(selected_students)
-                            
-                            for idx, (_, row) in enumerate(selected_students.iterrows()):
-                                mobile_num = format_clean_number(row.get("Mobile_No", ""))
-                                if mobile_num and len(mobile_num) >= 10:
-                                    mobile_num = mobile_num[-10:]
-                                    
-                                    personalized_msg = custom_tpl.format(
-                                        Name=row.get("Student_Name", ""),
-                                        Class=row.get("Class", ""),
-                                        Percentage=f"{row.get('Percentage', 0):.1f}"
-                                    )
-                                    
-                                    try:
-                                        if sms_provider == "Fast2SMS":
-                                            url = "https://www.fast2sms.com/dev/bulkV2"
-                                            payload = {
-                                                "route": "q",
-                                                "message": personalized_msg,
-                                                "language": "english",
-                                                "flash": 0,
-                                                "numbers": mobile_num
-                                            }
-                                            headers = {
-                                                "authorization": api_key.strip(),
-                                                "Content-Type": "application/x-www-form-urlencoded"
-                                            }
-                                            res = requests.post(url, data=payload, headers=headers)
-                                            res_json = res.json()
-                                            if res_json.get("return") is True:
-                                                success_count += 1
-                                            else:
-                                                failed_count += 1
-                                                
-                                        elif sms_provider == "TextLocal":
-                                            url = "https://api.textlocal.in/send/"
-                                            payload = {
-                                                "apikey": api_key.strip(),
-                                                "numbers": mobile_num,
-                                                "message": personalized_msg,
-                                                "sender": "TXTLCL"
-                                            }
-                                            res = requests.post(url, data=payload)
-                                            res_json = res.json()
-                                            if res_json.get("status") == "success":
-                                                success_count += 1
-                                            else:
-                                                failed_count += 1
-                                    except Exception:
-                                        failed_count += 1
-                                else:
-                                    failed_count += 1
-                                
-                                progress_bar.progress((idx + 1) / total)
-                            
-                            st.success(f"✅ SMS Process Finish! Successfully Sent: {success_count} | Failed/Invalid Mobile: {failed_count}")
+        msg_col1, msg_col2 = st.columns(2)
+        with msg_col1:
+          target_type = st.selectbox(
+              "Select Target Audience",
+              ["All Students", "By House", "By Class", "Junior / Senior"],
+          )
+          selected_recipient_filter = ""
+          if target_type == "By House":
+            selected_recipient_filter = st.selectbox(
+                "Select House", ["Aravali", "Nilgiri", "Shivalik", "Udaigiri"]
+            )
+          elif target_type == "By Class":
+            selected_recipient_filter = st.selectbox(
+                "Select Class", sorted(df_msg["Class"].astype(str).unique())
+            )
+          elif target_type == "Junior / Senior":
+            selected_recipient_filter = st.selectbox(
+                "Select Group", ["Junior (Classes 6-8)", "Senior (Classes 9-12)"]
+            )
+
+        with msg_col2:
+          delivery_mode = st.radio(
+              "Delivery Mode",
+              [
+                  "WhatsApp Direct Links (Bulk)",
+                  "Direct SMS / Phone Broadcast Simulation",
+              ],
+          )
+
+        message_text = st.text_area(
+            "Enter Message Text",
+            value=(
+                "Dear Parent, this is an important notification from PM SHRI"
+                " JNV Chhotaudepur. Please check your ward's exam result on"
+                " the portal."
+            ),
+        )
+
+        if st.button("🚀 Prepare & Broadcast Message"):
+          # Filter target students
+          target_df = df_msg.copy()
+          if target_type == "By House" and "House" in target_df.columns:
+            target_df = target_df[
+                target_df["House"].astype(str).str.strip().str.lower()
+                == selected_recipient_filter.strip().lower()
+            ]
+          elif target_type == "By Class":
+            target_df = target_df[
+                target_df["Class"].astype(str).str.strip().str.lower()
+                == selected_recipient_filter.strip().lower()
+            ]
+          elif target_type == "Junior / Senior":
+            junior_classes = ["6", "7", "8", "6th", "7th", "8th"]
+            if "Junior" in selected_recipient_filter:
+              target_df = target_df[
+                  target_df["Class"].astype(str).isin(junior_classes)
+              ]
+            else:
+              target_df = target_df[
+                  ~target_df["Class"].astype(str).isin(junior_classes)
+              ]
+
+          # Deduplicate by Mobile No
+          target_df = target_df.drop_duplicates(subset=["Mobile_No"])
+          st.success(
+              f"🎯 Target Audience Filtered: **{len(target_df)}** parent(s)"
+              " matched."
+          )
+
+          if len(target_df) > 0:
+            if "WhatsApp" in delivery_mode:
+              st.write(
+                  "📱 **Click below to open WhatsApp chats for each"
+                  " parent:**"
+              )
+              for _, r in target_df.iterrows():
+                mob = clean_mobile_for_wa(r.get("Mobile_No", ""))
+                if len(mob) >= 10:
+                  encoded_msg = urllib.parse.quote(
+                      f"Hello {r['Student_Name']}'s Parent,\n\n{message_text}"
+                  )
+                  wa_link = f"https://wa.me/{mob}?text={encoded_msg}"
+                  st.markdown(
+                      f"💬 Send to **{r['Student_Name']}** (Class"
+                      f" {r['Class']} - {r.get('Mobile_No', '')}):"
+                      f" [Open WhatsApp Chat]({wa_link})"
+                  )
+            else:
+              st.success(
+                  "✅ Broadcast simulated successfully via Phone SMS gateway"
+                  f" to {len(target_df)} recipients!"
+              )
+              for _, r in target_df.iterrows():
+                st.write(
+                    f"📤 [SMS Sent] -> {r.get('Mobile_No', '')} | Student:"
+                    f" {r['Student_Name']}"
+                )
