@@ -2824,12 +2824,11 @@ elif menu == "⚙️ ADMIN PORTAL":
     # Requirement 9: Parent Messaging System (House, Class, Junior/Senior, All, WhatsApp & Direct SMS)
     with st.expander(
         # 7. PARENT MESSAGING SYSTEM (WHATSAPP & SMS)
-with st.expander("📨 7. PARENT MESSAGING SYSTEM (WHATSAPP & SMS)", expanded=False):
         with st.expander("📨 7. PARENT MESSAGING SYSTEM (WHATSAPP & SMS)", expanded=False):
             if st.session_state["student_data"] is not None:
                 df_msg = st.session_state["student_data"]
                 
-                # Filter Mode Selection (Individual, Class-Wise, House-Wise)
+                # Filter Mode Selection
                 msg_target = st.radio(
                     "Message kisko bhejna hai select karein:",
                     ["👤 Individual Student", "🏫 Class-Wise Bulk", "🏠 House-Wise Bulk"],
@@ -2851,7 +2850,7 @@ with st.expander("📨 7. PARENT MESSAGING SYSTEM (WHATSAPP & SMS)", expanded=Fa
                 if not selected_students.empty:
                     st.info(f"📋 Selected Students Count: **{len(selected_students)}**")
                     
-                    # 💬 1. WHATSAPP NOTIFICATION (Individual Mode Only)
+                    # 💬 1. WHATSAPP NOTIFICATION
                     if msg_target == "👤 Individual Student":
                         m_row = selected_students.iloc[0]
                         mob = format_clean_number(m_row.get("Mobile_No", ""))
@@ -2869,7 +2868,6 @@ with st.expander("📨 7. PARENT MESSAGING SYSTEM (WHATSAPP & SMS)", expanded=Fa
                     with c_api2:
                         api_key = st.text_input("Enter API Key", type="password", help="Fast2SMS ya TextLocal ka authorization API key yahan daalein")
                     
-                    # Custom SMS Template
                     default_tpl = "Dear Parent, your ward {Name} (Class {Class}) scored {Percentage}% in Exam. - PM SHRI JNV CHHOTAUDEPUR"
                     custom_tpl = st.text_area("SMS Message Template (Placeholders: {Name}, {Class}, {Percentage})", value=default_tpl)
                     
@@ -2886,9 +2884,8 @@ with st.expander("📨 7. PARENT MESSAGING SYSTEM (WHATSAPP & SMS)", expanded=Fa
                             for idx, (_, row) in enumerate(selected_students.iterrows()):
                                 mobile_num = format_clean_number(row.get("Mobile_No", ""))
                                 if mobile_num and len(mobile_num) >= 10:
-                                    mobile_num = mobile_num[-10:]  # Clean 10 digit number
+                                    mobile_num = mobile_num[-10:]
                                     
-                                    # Personalize message per student
                                     personalized_msg = custom_tpl.format(
                                         Name=row.get("Student_Name", ""),
                                         Class=row.get("Class", ""),
