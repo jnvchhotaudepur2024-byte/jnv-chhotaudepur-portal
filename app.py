@@ -2822,8 +2822,7 @@ elif menu == "⚙️ ADMIN PORTAL":
                 st.rerun()
 
     # Requirement 9: Parent Messaging System (House, Class, Junior/Senior, All, WhatsApp & Direct SMS)
-    with st.expander(
-        # 7. PARENT MESSAGING SYSTEM (WHATSAPP & SMS)
+    with st.expander(# 7. PARENT MESSAGING SYSTEM (WHATSAPP & SMS)
         with st.expander("📨 7. PARENT MESSAGING SYSTEM (WHATSAPP & SMS)", expanded=False):
             if st.session_state["student_data"] is not None:
                 df_msg = st.session_state["student_data"]
