@@ -2286,8 +2286,8 @@ st.download_button(
     use_container_width=True,)
 st.markdown("---")
 
-    st.subheader("🖨️ Parent Portal Report Card Print Control")
-    settings = load_settings()
+st.subheader("🖨️ Parent Portal Report Card Print Control")
+settings = load_settings()
     current_print_status = settings.get("report_card_printing_enabled", True)
     new_print_status = st.toggle(
         "Enable Report Card Printing on Parent Portal",
