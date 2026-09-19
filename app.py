@@ -2283,9 +2283,8 @@ st.download_button(
     data=generate_excel_template(),
     file_name='JNV_Student_Marks_Template.xlsx',
     mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    use_container_width=True,
-)
-    st.markdown("---")
+    use_container_width=True,)
+st.markdown("---")
 
     st.subheader("🖨️ Parent Portal Report Card Print Control")
     settings = load_settings()
