@@ -191,7 +191,7 @@ LANG_TEXTS = {
         "trend_title": "📈 मल्टी-एग्जाम प्रोग्रेस ट्रेंड ग्राफ",
     },
     "Gujarati": {
-        "title": "વિદ્યાર્થી પ્રદર્શન અને પરિણામ પોર્ટल",
+        "title": "વિદ્યાર્થી પ્રદર્શન અને પરિણામ પોર્ટલ",
         "search_lbl": "🔎 વિદ્યાર્થીનું પરિણામ જુઓ",
         "cert_btn": "🏆 મેરિટ સર્ટિફિકેટ ડાઉનલોડ કરો",
         "admit_btn": "🪪 એડમિટ કાર્ડ (Admit Card) ડાઉનલોડ કરો",
@@ -327,7 +327,6 @@ def get_and_increment_visits():
 total_visits = get_and_increment_visits()
 
 
-# Settings & Config Handlers (Requirement 6: Admin Enable/Disable Report Card Printing)
 def load_settings():
   default_settings = {"report_card_printing_enabled": True}
   if os.path.exists(SETTINGS_FILE):
@@ -344,7 +343,6 @@ def save_settings(settings_dict):
     json.dump(settings_dict, f)
 
 
-# Database Handlers
 def init_db():
   conn = sqlite3.connect(DB_FILE)
   cursor = conn.cursor()
@@ -563,6 +561,42 @@ def log_parent_search(roll_no, student_name, selected_class):
     new_data.to_csv(LOG_FILE, mode="w", header=True, index=False)
 
 
+def recalculate_scores_and_ranks(df):
+  """Marks update karte hi Total, Percentage aur Class Rank automatic calculate karta hai."""
+  if df is None or df.empty:
+    return df
+
+  df_mod = df.copy()
+
+  for sub in ALL_SUBJECTS:
+    if sub in df_mod.columns:
+      df_mod[sub] = pd.to_numeric(df_mod[sub], errors="coerce")
+
+  df_mod["Total_Marks"] = df_mod[ALL_SUBJECTS].sum(axis=1, skipna=True)
+
+  if "Max_Marks" not in df_mod.columns or df_mod["Max_Marks"].isnull().all():
+    df_mod["Max_Marks"] = df_mod["Exam_Type"].apply(
+        lambda x: 150 if "PWT" in str(x).upper() else 600
+    )
+
+  df_mod["Max_Marks"] = pd.to_numeric(
+      df_mod["Max_Marks"], errors="coerce"
+  ).fillna(600)
+
+  df_mod["Percentage"] = (
+      (df_mod["Total_Marks"] / df_mod["Max_Marks"]) * 100
+  ).round(2)
+
+  df_mod["Class_Rank"] = (
+      df_mod.groupby(["Class", "Exam_Type"])["Total_Marks"]
+      .rank(ascending=False, method="min")
+      .fillna(0)
+      .astype(int)
+  )
+
+  return df_mod
+
+
 def process_data_excel(excel_file_source):
   xls = pd.ExcelFile(excel_file_source)
   sheet_names = xls.sheet_names
@@ -640,27 +674,7 @@ def process_data_excel(excel_file_source):
     if col in df.columns:
       df[col] = df[col].apply(format_clean_number)
 
-  for sub in ALL_SUBJECTS:
-    if sub not in df.columns:
-      df[sub] = np.nan
-    df[sub] = pd.to_numeric(df[sub], errors="coerce")
-
-  df["Total_Marks"] = df[ALL_SUBJECTS].sum(axis=1, skipna=True)
-  if "Max_Marks" not in df.columns or df["Max_Marks"].isnull().all():
-    df["Max_Marks"] = df["Exam_Type"].apply(
-        lambda x: 150 if "PWT" in str(x).upper() else 600
-    )
-
-  df["Max_Marks"] = pd.to_numeric(df["Max_Marks"], errors="coerce").fillna(600)
-  df["Percentage"] = (df["Total_Marks"] / df["Max_Marks"]) * 100
-  df["Percentage"] = df["Percentage"].round(2)
-  df["Class_Rank"] = (
-      df.groupby(["Class", "Exam_Type"])["Total_Marks"]
-      .rank(ascending=False, method="min")
-      .fillna(0)
-      .astype(int)
-  )
-
+  df = recalculate_scores_and_ranks(df)
   sync_df_to_sqlite(df)
   return df
 
@@ -679,7 +693,6 @@ if "admin_logged_in" not in st.session_state:
   st.session_state["admin_logged_in"] = False
 
 
-# ReportLab Decorative Canvas Callback with Exact Marksheet Red Border
 def create_watermark_callback(
     watermark_text, with_border=True, border_color="#B22222"
 ):
@@ -830,13 +843,8 @@ def generate_merit_certificate_pdf(student_info, exam_type, percentage, rank):
   return buffer.getvalue()
 
 
-# ==============================================================================
-# UPDATED 1-PAGE COMPACT PDF SCORECARD GENERATOR (Strict 1-Page & Blank Handling)
-# Requirements 1, 2, 3, 4, 5, 10 addressed
-# ==============================================================================
 def generate_pdf_scorecard(student_info, filtered_df):
   buffer = io.BytesIO()
-  # Strict 1-page margins & A4 size
   doc = SimpleDocTemplate(
       buffer,
       pagesize=A4,
@@ -901,7 +909,6 @@ def generate_pdf_scorecard(student_info, filtered_df):
   story.append(header_table)
   story.append(Spacer(1, 2))
 
-  # Affiliation details line (Requirements 2, 3, 4, 5)
   aff_data = [
       [
           Paragraph("<b>CBSE AFFILIATION NO.</b> : 440151", small_p),
@@ -929,7 +936,6 @@ def generate_pdf_scorecard(student_info, filtered_df):
   story.append(aff_table)
   story.append(Spacer(1, 2))
 
-  # Title Banner
   banner = Table(
       [[
           Paragraph(
@@ -954,7 +960,6 @@ def generate_pdf_scorecard(student_info, filtered_df):
   story.append(banner)
   story.append(Spacer(1, 2))
 
-  # Student Info Block & Passport Photo box
   photo_path = f"photos/students/{student_info['Roll_No']}.png"
   photo_elem = (
       RLImage(photo_path, width=42, height=50)
@@ -1028,7 +1033,6 @@ def generate_pdf_scorecard(student_info, filtered_df):
   story.append(info_table)
   story.append(Spacer(1, 2))
 
-  # PART A Header Banner
   part_a_head = Table(
       [[
           Paragraph(
@@ -1052,7 +1056,6 @@ def generate_pdf_scorecard(student_info, filtered_df):
   )
   story.append(part_a_head)
 
-  # Scholastic Area Dynamic Detailed Table (Requirement 10: Blank if missing data)
   schol_head = [
       [
           "SUBJECT",
@@ -1161,7 +1164,6 @@ def generate_pdf_scorecard(student_info, filtered_df):
     grd = calculate_grade(m_val)
     s_bk = breakdown_dict.get(sub, {})
 
-    # Strict check: If breakdown/exam values are missing in sheet, leave blank or 0 as per Requirement 10
     pwt1 = s_bk.get("pwt1", "")
     pwt2 = s_bk.get("pwt2", "")
     best12 = (
@@ -1281,7 +1283,6 @@ def generate_pdf_scorecard(student_info, filtered_df):
   story.append(schol_table)
   story.append(Spacer(1, 2))
 
-  # Skill Course Line
   story.append(
       Paragraph(
           f"<b>A 1 - Skill Course :</b> <font color='#006600'>"
@@ -1291,7 +1292,6 @@ def generate_pdf_scorecard(student_info, filtered_df):
   )
   story.append(Spacer(1, 2))
 
-  # Co-scholastic & Bagless Days parsing
   co_sch_raw = str(student_info.get("Co_Scholastic", ""))
   t1_art, t2_art, t1_health, t2_health, t1_comm, t2_comm = (
       "A",
@@ -1322,7 +1322,6 @@ def generate_pdf_scorecard(student_info, filtered_df):
     except Exception:
       pass
 
-  # PART B, C Horizontal Matrix
   part_b_table = Table(
       [
           [
@@ -1365,7 +1364,6 @@ def generate_pdf_scorecard(student_info, filtered_df):
   story.append(part_b_table)
   story.append(Spacer(1, 2))
 
-  # PART D, E, F & Remarks Combined Compact Box
   part_d_f = Table(
       [
           [
@@ -1419,7 +1417,6 @@ def generate_pdf_scorecard(student_info, filtered_df):
   story.append(part_d_f)
   story.append(Spacer(1, 2))
 
-  # Remarks & Signatures Compact Grid
   remark_text = student_info.get("Remarks", "Passed and Promoted")
   t_sign = (
       RLImage(TEACHER_SIGN_PATH, width=45, height=18)
@@ -1429,11 +1426,6 @@ def generate_pdf_scorecard(student_info, filtered_df):
   p_sign = (
       RLImage(SIGN_PATH, width=45, height=18)
       if os.path.exists(SIGN_PATH)
-      else Paragraph("", small_p)
-  )
-  par_sign = (
-      RLImage(PARENT_SIGN_PATH, width=45, height=18)
-      if os.path.exists(PARENT_SIGN_PATH)
       else Paragraph("", small_p)
   )
 
@@ -1786,7 +1778,6 @@ if menu == "👨‍🎓 PARENT PORTAL":
       unsafe_allow_html=True,
   )
 
-  # Requirement 8: Distinguish Board Toppers from Current Session Hall of Fame
   current_session_toppers = []
   if (
       st.session_state["student_data"] is not None
@@ -1991,7 +1982,6 @@ if menu == "👨‍🎓 PARENT PORTAL":
             f" {student_info.get('Skill_Course', 'Handicraft')}"
         )
 
-        # Requirement 6: Check if admin enabled printing for parents portal
         settings = load_settings()
         printing_enabled = settings.get("report_card_printing_enabled", True)
 
@@ -2240,7 +2230,6 @@ elif menu == "⚙️ ADMIN PORTAL":
 
     st.markdown("---")
 
-    # Requirement 6: Print Enable/Disable Control Panel
     st.subheader("🖨️ Parent Portal Report Card Print Control")
     settings = load_settings()
     current_print_status = settings.get("report_card_printing_enabled", True)
@@ -2396,7 +2385,6 @@ elif menu == "⚙️ ADMIN PORTAL":
         "✏️ 3. EDIT STUDENT DATA, BULK UPLOAD & REPORT CARD DETAILS",
         expanded=False,
     ):
-      # Requirement 7: Excel Bulk Upload and Detailed Student Update
       st.markdown(
           "##### 📁 Bulk Upload Student Details & Marks via Excel File"
       )
@@ -2609,25 +2597,15 @@ elif menu == "⚙️ ADMIN PORTAL":
               st.error(f"❌ Error extracting ZIP: {ex}")
 
         st.markdown("---")
-        st.markdown("##### 📝 Realtime Data & Rank Modifier")
+        st.markdown("##### 📝 Realtime Data & Automatic Mark/Rank Calculation")
 
-        if st.button("🔄 Auto-Recalculate Class Ranks"):
-          df_mod = st.session_state["student_data"].copy()
-          df_mod["Total_Marks"] = df_mod[ALL_SUBJECTS].sum(
-              axis=1, skipna=True
+        if st.button("🔄 Auto-Recalculate Class Ranks & Totals"):
+          recalculated_df = recalculate_scores_and_ranks(
+              st.session_state["student_data"]
           )
-          df_mod["Percentage"] = (
-              (df_mod["Total_Marks"] / df_mod["Max_Marks"]) * 100
-          ).round(2)
-          df_mod["Class_Rank"] = (
-              df_mod.groupby(["Class", "Exam_Type"])["Total_Marks"]
-              .rank(ascending=False, method="min")
-              .fillna(0)
-              .astype(int)
-          )
-          st.session_state["student_data"] = df_mod
-          sync_df_to_sqlite(df_mod)
-          st.success("✅ Class ranks recalculated & saved!")
+          st.session_state["student_data"] = recalculated_df
+          sync_df_to_sqlite(recalculated_df)
+          st.success("✅ Class ranks aur Totals successfully recalculate hue!")
           st.rerun()
 
         edited_df = st.data_editor(
@@ -2636,6 +2614,17 @@ elif menu == "⚙️ ADMIN PORTAL":
             use_container_width=True,
             key="db_realtime_editor",
         )
+
+        if not edited_df.equals(st.session_state["student_data"]):
+          updated_df = recalculate_scores_and_ranks(edited_df)
+          st.session_state["student_data"] = updated_df
+          sync_df_to_sqlite(updated_df)
+          st.toast(
+              "⚡ Marks update hote hi Total, Percentage & Rank recalculate ho"
+              " gaye!",
+              icon="🔄",
+          )
+          st.rerun()
 
         if "show_save_confirm" not in st.session_state:
           st.session_state["show_save_confirm"] = False
@@ -2648,20 +2637,9 @@ elif menu == "⚙️ ADMIN PORTAL":
           confirm_col1, confirm_col2 = st.columns(2)
           with confirm_col1:
             if st.button("✅ YES, SAVE DATA", use_container_width=True):
-              for sub in ALL_SUBJECTS:
-                if sub in edited_df.columns:
-                  edited_df[sub] = pd.to_numeric(
-                      edited_df[sub], errors="coerce"
-                  )
-              edited_df["Total_Marks"] = edited_df[ALL_SUBJECTS].sum(
-                  axis=1, skipna=True
-              )
-              edited_df["Percentage"] = (
-                  (edited_df["Total_Marks"] / edited_df["Max_Marks"]) * 100
-              ).round(2)
-
-              st.session_state["student_data"] = edited_df
-              sync_df_to_sqlite(edited_df)
+              updated_df = recalculate_scores_and_ranks(edited_df)
+              st.session_state["student_data"] = updated_df
+              sync_df_to_sqlite(updated_df)
               st.session_state["show_save_confirm"] = False
               st.success("✅ Database updated successfully!")
               st.rerun()
@@ -2695,7 +2673,6 @@ elif menu == "⚙️ ADMIN PORTAL":
           st.rerun()
 
       st.markdown("---")
-      # Requirement 8: Board Toppers with Rank management
       st.subheader("🏆 CBSE Board Exam Toppers Hall of Fame (With Rank)")
       toppers = load_board_toppers()
 
@@ -2821,7 +2798,6 @@ elif menu == "⚙️ ADMIN PORTAL":
                 st.success("✅ Deleted successfully!")
                 st.rerun()
 
-    # Requirement 9: Parent Messaging System (House, Class, Junior/Senior, All, WhatsApp & Direct SMS)
     with st.expander(
         "📨 7. PARENT MESSAGING SYSTEM (WHATSAPP & SMS)", expanded=True
     ):
@@ -2868,7 +2844,6 @@ elif menu == "⚙️ ADMIN PORTAL":
         )
 
         if st.button("🚀 Prepare & Broadcast Message"):
-          # Filter target students
           target_df = df_msg.copy()
           if target_type == "By House" and "House" in target_df.columns:
             target_df = target_df[
@@ -2891,7 +2866,6 @@ elif menu == "⚙️ ADMIN PORTAL":
                   ~target_df["Class"].astype(str).isin(junior_classes)
               ]
 
-          # Deduplicate by Mobile No
           target_df = target_df.drop_duplicates(subset=["Mobile_No"])
           st.success(
               f"🎯 Target Audience Filtered: **{len(target_df)}** parent(s)"
