@@ -343,6 +343,50 @@ def save_settings(settings_dict):
     json.dump(settings_dict, f)
 
 
+def generate_excel_template():
+  template_data = [{
+      "Class": "10",
+      "Roll_No": "101",
+      "Student_Name": "Aarav Patel",
+      "Father_Name": "Sanjay Patel",
+      "Mother_Name": "Meena Patel",
+      "Gender": "M",
+      "GR_No": "1001",
+      "Area": "Rural",
+      "House": "Aravali",
+      "DOB": "15/08/2010",
+      "Aadhaar_No": "[Aadhaar Redacted]",
+      "Mobile_No": "9876543210",
+      "Exam_Type": "Term End",
+      "Max_Marks": 600,
+      "Class_Teacher": "A. K. Patel",
+      "Gujarati": 85,
+      "Hindi": 78,
+      "English": 82,
+      "Mathematics": 90,
+      "Science": 88,
+      "Social_Science": 80,
+      "Physics": "",
+      "Chemistry": "",
+      "Biology": "",
+      "Attendance": "95%",
+      "Working_Days": "220",
+      "Present_Days": "210",
+      "Discipline": "A",
+      "Skill_Course": "Handicraft",
+      "Co_Scholastic": "Art: A/A | Health: A/A | Comm: A/A",
+      "Bagless_Days": "Yes | 05 | 05",
+      "Outstanding_Achievement": "1st in Science Fair",
+      "Remarks": "Passed and Promoted",
+  }]
+  buffer = io.BytesIO()
+  df = pd.DataFrame(template_data)
+  with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+    df.to_excel(writer, index=False, sheet_name="Student_Marks")
+  buffer.seek(0)
+  return buffer
+
+
 def init_db():
   conn = sqlite3.connect(DB_FILE)
   cursor = conn.cursor()
@@ -2227,67 +2271,11 @@ elif menu == "⚙️ ADMIN PORTAL":
     if st.button("Logout"):
       st.session_state["admin_logged_in"] = False
       st.rerun()
-import io
-import pandas as pd
-import streamlit as st
 
+    st.markdown("---")
 
-# Function to generate Excel Template in memory
-def generate_excel_template():
-  template_data = [{
-      'Class': '10',
-      'Roll_No': '101',
-      'Student_Name': 'Aarav Patel',
-      'Father_Name': 'Sanjay Patel',
-      'Mother_Name': 'Meena Patel',
-      'Gender': 'M',
-      'GR_No': '1001',
-      'Area': 'Rural',
-      'House': 'Aravali',
-      'DOB': '15/08/2010',
-      'Aadhaar_No': '123456789012',
-      'Mobile_No': '9876543210',
-      'Exam_Type': 'Term End',
-      'Max_Marks': 600,
-      'Class_Teacher': 'A. K. Patel',
-      'Gujarati': 85,
-      'Hindi': 78,
-      'English': 82,
-      'Mathematics': 90,
-      'Science': 88,
-      'Social_Science': 80,
-      'Physics': '',
-      'Chemistry': '',
-      'Biology': '',
-      'Attendance': '95%',
-      'Working_Days': '220',
-      'Present_Days': '210',
-      'Discipline': 'A',
-      'Skill_Course': 'Handicraft',
-      'Co_Scholastic': 'Art: A/A | Health: A/A | Comm: A/A',
-      'Bagless_Days': 'Yes | 05 | 05',
-      'Outstanding_Achievement': '1st in Science Fair',
-      'Remarks': 'Passed and Promoted',
-  }]
-  buffer = io.BytesIO()
-  df = pd.DataFrame(template_data)
-  with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-    df.to_excel(writer, index=False, sheet_name='Student_Marks')
-  buffer.seek(0)
-  return buffer
-
-
-# File Uploader ke theek upar ya neeche ye download button laga dein:
-st.download_button(
-    label='📥 Download Sample Excel Template (.xlsx)',
-    data=generate_excel_template(),
-    file_name='JNV_Student_Marks_Template.xlsx',
-    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    use_container_width=True,)
-st.markdown("---")
-
-st.subheader("🖨️ Parent Portal Report Card Print Control")
-settings = load_settings()
+    st.subheader("🖨️ Parent Portal Report Card Print Control")
+    settings = load_settings()
     current_print_status = settings.get("report_card_printing_enabled", True)
     new_print_status = st.toggle(
         "Enable Report Card Printing on Parent Portal",
@@ -2389,7 +2377,9 @@ settings = load_settings()
               "Class_Teacher" in df_t.columns
               and not df_t["Class_Teacher"].isnull().all()
           ):
-            teachers = sorted(df_t["Class_Teacher"].dropna().astype(str).unique())
+            teachers = sorted(
+                df_t["Class_Teacher"].dropna().astype(str).unique()
+            )
             teacher_summary = []
             for t in teachers:
               t_df = df_t[df_t["Class_Teacher"].astype(str) == t]
@@ -2444,6 +2434,13 @@ settings = load_settings()
       st.markdown(
           "##### 📁 Bulk Upload Student Details & Marks via Excel File"
       )
+      st.download_button(
+          label="📥 Download Sample Excel Template (.xlsx)",
+          data=generate_excel_template(),
+          file_name="JNV_Student_Marks_Template.xlsx",
+          mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          use_container_width=True,
+      )
       uploaded_excel = st.file_uploader(
           "Upload Student Excel File (.xlsx)",
           type=["xlsx"],
@@ -2468,7 +2465,9 @@ settings = load_settings()
             "Select Student (by Roll No) to Edit Specific Report Card Extra"
             " Data:",
             sorted(
-                st.session_state["student_data"]["Roll_No"].astype(str).unique()
+                st.session_state["student_data"]["Roll_No"]
+                .astype(str)
+                .unique()
             ),
             key="rep_edit_roll",
         )
@@ -2750,7 +2749,9 @@ settings = load_settings()
         if add_topper_btn and t_name and t_pct:
           photo_path = ""
           if t_photo:
-            photo_path = f"photos/board/{t_name.replace(' ', '_')}_{t_class}.png"
+            photo_path = (
+                f"photos/board/{t_name.replace(' ', '_')}_{t_class}.png"
+            )
             Image.open(t_photo).save(photo_path)
           toppers.append({
               "name": t_name,
@@ -2878,7 +2879,8 @@ settings = load_settings()
             )
           elif target_type == "Junior / Senior":
             selected_recipient_filter = st.selectbox(
-                "Select Group", ["Junior (Classes 6-8)", "Senior (Classes 9-12)"]
+                "Select Group",
+                ["Junior (Classes 6-8)", "Senior (Classes 9-12)"],
             )
 
         with msg_col2:
