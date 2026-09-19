@@ -2227,6 +2227,64 @@ elif menu == "⚙️ ADMIN PORTAL":
     if st.button("Logout"):
       st.session_state["admin_logged_in"] = False
       st.rerun()
+import io
+import pandas as pd
+import streamlit as st
+
+
+# Function to generate Excel Template in memory
+def generate_excel_template():
+  template_data = [{
+      'Class': '10',
+      'Roll_No': '101',
+      'Student_Name': 'Aarav Patel',
+      'Father_Name': 'Sanjay Patel',
+      'Mother_Name': 'Meena Patel',
+      'Gender': 'M',
+      'GR_No': '1001',
+      'Area': 'Rural',
+      'House': 'Aravali',
+      'DOB': '15/08/2010',
+      'Aadhaar_No': '123456789012',
+      'Mobile_No': '9876543210',
+      'Exam_Type': 'Term End',
+      'Max_Marks': 600,
+      'Class_Teacher': 'A. K. Patel',
+      'Gujarati': 85,
+      'Hindi': 78,
+      'English': 82,
+      'Mathematics': 90,
+      'Science': 88,
+      'Social_Science': 80,
+      'Physics': '',
+      'Chemistry': '',
+      'Biology': '',
+      'Attendance': '95%',
+      'Working_Days': '220',
+      'Present_Days': '210',
+      'Discipline': 'A',
+      'Skill_Course': 'Handicraft',
+      'Co_Scholastic': 'Art: A/A | Health: A/A | Comm: A/A',
+      'Bagless_Days': 'Yes | 05 | 05',
+      'Outstanding_Achievement': '1st in Science Fair',
+      'Remarks': 'Passed and Promoted',
+  }]
+  buffer = io.BytesIO()
+  df = pd.DataFrame(template_data)
+  with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+    df.to_excel(writer, index=False, sheet_name='Student_Marks')
+  buffer.seek(0)
+  return buffer
+
+
+# File Uploader ke theek upar ya neeche ye download button laga dein:
+st.download_button(
+    label='📥 Download Sample Excel Template (.xlsx)',
+    data=generate_excel_template(),
+    file_name='JNV_Student_Marks_Template.xlsx',
+    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    use_container_width=True,
+)
 
     st.markdown("---")
 
